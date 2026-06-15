@@ -24,6 +24,7 @@ import {
   NIcon,
   NInput,
   NSpin,
+  NSwitch,
   NTag,
   NTooltip,
   useDialog,
@@ -114,6 +115,46 @@ async function copyProxyKeys() {
     window.$message.success(t("keys.proxyKeysCopied"));
   } else {
     window.$message.error(t("keys.copyFailed"));
+  }
+}
+
+const mcpLoading = ref(false);
+
+// 判断是否为Tavily分组
+const isTavilyGroup = computed(() => {
+  return props.group?.channel_type === "tavily";
+});
+
+// 额度使用率颜色类型
+const quotaUsageType = computed(() => {
+  const qs = stats.value?.quota_stats;
+  if (!qs || qs.total_quota === 0) {
+    return "default";
+  }
+  const ratio = qs.used_quota / qs.total_quota;
+  if (ratio >= 0.9) {
+    return "error";
+  }
+  if (ratio >= 0.7) {
+    return "warning";
+  }
+  return "success";
+});
+
+async function handleToggleMCP(enabled: boolean) {
+  if (!props.group?.id) {
+    return;
+  }
+  try {
+    mcpLoading.value = true;
+    const updated = await keysApi.toggleMCP(props.group.id, enabled);
+    emit("refresh", updated);
+  } catch (err) {
+    // Revert on failure (error toast is shown by the HTTP interceptor).
+    // No action needed; the switch value is bound to group.mcp_enabled which
+    // was not mutated.
+  } finally {
+    mcpLoading.value = false;
   }
 }
 
@@ -526,6 +567,33 @@ function resetPage() {
                 </n-tooltip>
               </n-statistic>
             </n-grid-item>
+            <!-- Tavily额度统计 -->
+            <n-grid-item span="1" v-if="stats?.quota_stats">
+              <n-statistic
+                :label="`${t('keys.quotaUsage')}`"
+              >
+                <n-tooltip trigger="hover">
+                  <template #trigger>
+                    <n-gradient-text
+                      :type="quotaUsageType"
+                      size="20"
+                    >
+                      {{ formatNumber(stats.quota_stats.used_quota) }} / {{ formatNumber(stats.quota_stats.total_quota) }}
+                    </n-gradient-text>
+                  </template>
+                  {{ t("keys.quotaUsageTip") }}
+                </n-tooltip>
+                <n-divider vertical />
+                <n-tooltip trigger="hover">
+                  <template #trigger>
+                    <n-gradient-text type="error" size="20">
+                      {{ stats.quota_stats.exhausted_keys }}
+                    </n-gradient-text>
+                  </template>
+                  {{ t("keys.exhaustedKeys") }}
+                </n-tooltip>
+              </n-statistic>
+            </n-grid-item>
           </n-grid>
         </n-spin>
       </div>
@@ -553,6 +621,20 @@ function resetPage() {
                     <n-grid-item>
                       <n-form-item :label="`${t('keys.channelType')}：`">
                         {{ group?.channel_type }}
+                      </n-form-item>
+                    </n-grid-item>
+                    <!-- MCP开关：仅Tavily标准分组显示 -->
+                    <n-grid-item v-if="isTavilyGroup && !isAggregateGroup">
+                      <n-form-item :label="`${t('keys.mcpEnabled')}：`">
+                        <n-switch
+                          :value="group?.mcp_enabled || false"
+                          :loading="mcpLoading"
+                          @update:value="handleToggleMCP"
+                          size="small"
+                        />
+                        <span style="font-size: 12px; color: #999; margin-left: 8px">
+                          {{ group?.mcp_enabled ? t('keys.mcpEnabled') : t('keys.mcpDisabled') }}
+                        </span>
                       </n-form-item>
                     </n-grid-item>
                     <n-grid-item>

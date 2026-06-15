@@ -361,6 +361,13 @@ export default {
     modelRedirectInvalidJson: "模型重定向规则 JSON 格式错误",
     modelRedirectInvalidFormat: "模型重定向规则的键值必须都是字符串",
     modelRedirectEmptyModel: "模型名称不能为空",
+    mcpEnabled: "MCP 已启用",
+    mcpDisabled: "MCP 未启用",
+    mcpEnabledTooltip:
+      "为此 Tavily 分组启用模型上下文协议 (MCP) 端点。启用后，客户端可通过 /mcp/{group_name} 访问 Tavily 工具",
+    quotaUsage: "额度用量",
+    quotaUsageTip: "所有追踪密钥的已用额度 / 总额度",
+    exhaustedKeys: "已耗尽密钥",
     never: "从未",
     daysAgo: "{days}天前",
     hoursAgo: "{hours}小时前",

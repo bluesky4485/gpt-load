@@ -63,6 +63,8 @@ type GroupCreateRequest struct {
 	Config              map[string]any      `json:"config"`
 	HeaderRules         []models.HeaderRule `json:"header_rules"`
 	ProxyKeys           string              `json:"proxy_keys"`
+	KeySelectionStrategy string             `json:"key_selection_strategy"`
+	MCPEnabled           bool               `json:"mcp_enabled"`
 }
 
 // CreateGroup handles the creation of a new group.
@@ -89,6 +91,8 @@ func (s *Server) CreateGroup(c *gin.Context) {
 		Config:              req.Config,
 		HeaderRules:         req.HeaderRules,
 		ProxyKeys:           req.ProxyKeys,
+		KeySelectionStrategy: req.KeySelectionStrategy,
+		MCPEnabled:           req.MCPEnabled,
 	}
 
 	group, err := s.GroupService.CreateGroup(c.Request.Context(), params)
@@ -132,6 +136,7 @@ type GroupUpdateRequest struct {
 	Config              map[string]any      `json:"config"`
 	HeaderRules         []models.HeaderRule `json:"header_rules"`
 	ProxyKeys           *string             `json:"proxy_keys,omitempty"`
+	KeySelectionStrategy *string            `json:"key_selection_strategy,omitempty"`
 }
 
 type GroupReorderItemRequest struct {
@@ -192,6 +197,7 @@ func (s *Server) UpdateGroup(c *gin.Context) {
 		ModelRedirectStrict: req.ModelRedirectStrict,
 		Config:              req.Config,
 		ProxyKeys:           req.ProxyKeys,
+		KeySelectionStrategy: req.KeySelectionStrategy,
 	}
 
 	if req.Upstreams != nil {
@@ -263,6 +269,8 @@ type GroupResponse struct {
 	Config              datatypes.JSONMap   `json:"config"`
 	HeaderRules         []models.HeaderRule `json:"header_rules"`
 	ProxyKeys           string              `json:"proxy_keys"`
+	KeySelectionStrategy string             `json:"key_selection_strategy"`
+	MCPEnabled           bool               `json:"mcp_enabled"`
 	LastValidatedAt     *time.Time          `json:"last_validated_at"`
 	CreatedAt           time.Time           `json:"created_at"`
 	UpdatedAt           time.Time           `json:"updated_at"`
@@ -307,6 +315,8 @@ func (s *Server) newGroupResponse(group *models.Group) *GroupResponse {
 		Config:              group.Config,
 		HeaderRules:         headerRules,
 		ProxyKeys:           group.ProxyKeys,
+		KeySelectionStrategy: group.KeySelectionStrategy,
+		MCPEnabled:           group.MCPEnabled,
 		LastValidatedAt:     group.LastValidatedAt,
 		CreatedAt:           group.CreatedAt,
 		UpdatedAt:           group.UpdatedAt,
@@ -537,4 +547,37 @@ func (s *Server) GetParentAggregateGroups(c *gin.Context) {
 	}
 
 	response.Success(c, parentGroups)
+}
+
+// ToggleMCPRequest defines the payload for toggling MCP on a group.
+type ToggleMCPRequest struct {
+	Enabled bool `json:"enabled"`
+}
+
+// ToggleMCP handles enabling or disabling MCP for a group.
+// PUT /api/groups/:id/mcp
+func (s *Server) ToggleMCP(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		response.ErrorI18nFromAPIError(c, app_errors.ErrBadRequest, "validation.invalid_group_id")
+		return
+	}
+
+	var req ToggleMCPRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, app_errors.NewAPIError(app_errors.ErrInvalidJSON, err.Error()))
+		return
+	}
+
+	group, err := s.GroupService.ToggleMCP(c.Request.Context(), uint(id), req.Enabled)
+	if s.handleGroupError(c, err) {
+		return
+	}
+
+	// Invalidate cached MCP server when toggled off to free resources.
+	if !req.Enabled && s.MCPManager != nil {
+		s.MCPManager.InvalidateServer(group.Name)
+	}
+
+	response.Success(c, s.newGroupResponse(group))
 }

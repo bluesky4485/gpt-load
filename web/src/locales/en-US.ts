@@ -377,6 +377,13 @@ export default {
     modelRedirectInvalidJson: "Invalid JSON format for model redirect rules",
     modelRedirectInvalidFormat: "Model redirect rule keys and values must all be strings",
     modelRedirectEmptyModel: "Model name cannot be empty",
+    mcpEnabled: "MCP Enabled",
+    mcpDisabled: "MCP Disabled",
+    mcpEnabledTooltip:
+      "Enable Model Context Protocol (MCP) endpoint for this Tavily group. When enabled, clients can access Tavily tools via /mcp/{group_name}",
+    quotaUsage: "Quota Usage",
+    quotaUsageTip: "Total used / total quota across all tracked keys",
+    exhaustedKeys: "Exhausted Keys",
     never: "Never",
     daysAgo: "{days} days ago",
     hoursAgo: "{hours} hours ago",

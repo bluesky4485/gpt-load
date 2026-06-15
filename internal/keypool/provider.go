@@ -9,6 +9,7 @@ import (
 	"gpt-load/internal/models"
 	"gpt-load/internal/store"
 	"math/rand"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -34,8 +35,18 @@ func NewProvider(db *gorm.DB, store store.Store, settingsManager *config.SystemS
 	}
 }
 
-// SelectKey 为指定的分组原子性地选择并轮换一个可用的 APIKey。
-func (p *KeyProvider) SelectKey(groupID uint) (*models.APIKey, error) {
+// SelectKey 为指定的分组根据策略选择并轮换一个可用的 APIKey。
+func (p *KeyProvider) SelectKey(groupID uint, strategy string) (*models.APIKey, error) {
+	switch strategy {
+	case models.KeySelectionQuotaFirst:
+		return p.quotaFirstSelect(groupID)
+	default:
+		return p.roundRobinSelect(groupID)
+	}
+}
+
+// roundRobinSelect 通过原子轮换从 active keys 列表中选择一个 Key（现有逻辑）。
+func (p *KeyProvider) roundRobinSelect(groupID uint) (*models.APIKey, error) {
 	activeKeysListKey := fmt.Sprintf("group:%d:active_keys", groupID)
 
 	// 1. Atomically rotate the key ID from the list
@@ -85,6 +96,99 @@ func (p *KeyProvider) SelectKey(groupID uint) (*models.APIKey, error) {
 	}
 
 	return apiKey, nil
+}
+
+// quotaFirstSelect 根据剩余额度优先选择 Key。
+// 优先级：无额度限制(TotalQuota=0) > 有剩余额度 > 额度已耗尽，同优先级内按剩余额度降序，相同额度随机打散。
+func (p *KeyProvider) quotaFirstSelect(groupID uint) (*models.APIKey, error) {
+	type quotaKey struct {
+		ID           uint
+		TotalQuota   int
+		UsedQuota    int
+		FailureCount int64
+		CreatedAt    time.Time
+	}
+
+	var candidates []quotaKey
+	if err := p.db.Model(&models.APIKey{}).
+		Select("id, total_quota, used_quota, failure_count, created_at").
+		Where("group_id = ? AND status = ?", groupID, models.KeyStatusActive).
+		Find(&candidates).Error; err != nil {
+		return nil, fmt.Errorf("failed to query active keys for quota selection: %w", err)
+	}
+
+	if len(candidates) == 0 {
+		return nil, app_errors.ErrNoActiveKeys
+	}
+
+	// Pre-shuffle so that ties within the same priority are randomly distributed.
+	rand.Shuffle(len(candidates), func(i, j int) {
+		candidates[i], candidates[j] = candidates[j], candidates[i]
+	})
+
+	// Stable sort by priority. Stable preserves the pre-shuffle order for equal keys.
+	sort.SliceStable(candidates, func(i, j int) bool {
+		return quotaPriority(candidates[i].TotalQuota, candidates[i].UsedQuota) >
+			quotaPriority(candidates[j].TotalQuota, candidates[j].UsedQuota)
+	})
+
+	// Pick the top candidate.
+	chosen := candidates[0]
+
+	// Fetch and decrypt the key value (separate query to avoid loading all encrypted values).
+	var keyValue string
+	if err := p.db.Model(&models.APIKey{}).
+		Select("key_value").
+		Where("id = ?", chosen.ID).
+		Scan(&keyValue).Error; err != nil {
+		return nil, fmt.Errorf("failed to fetch key value for key %d: %w", chosen.ID, err)
+	}
+
+	decrypted, err := p.encryptionSvc.Decrypt(keyValue)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"keyID": chosen.ID,
+			"error": err,
+		}).Debug("Failed to decrypt key value, using as-is for backward compatibility")
+		decrypted = keyValue
+	}
+
+	return &models.APIKey{
+		ID:           chosen.ID,
+		KeyValue:     decrypted,
+		Status:       models.KeyStatusActive,
+		FailureCount: chosen.FailureCount,
+		GroupID:      groupID,
+		TotalQuota:   chosen.TotalQuota,
+		UsedQuota:    chosen.UsedQuota,
+		CreatedAt:    chosen.CreatedAt,
+	}, nil
+}
+
+// quotaPriority 计算 Key 的选择优先级权重。
+// 无额度限制 (TotalQuota=0) 优先级最高；有剩余额度次之，按剩余量排序；额度耗尽最低。
+func quotaPriority(totalQuota, usedQuota int) int {
+	if totalQuota <= 0 {
+		return 2_000_000_000 // unlimited / not configured — highest priority
+	}
+	remaining := totalQuota - usedQuota
+	if remaining > 0 {
+		return 1_000_000_000 + remaining // has quota, sorted by remaining
+	}
+	return remaining // exhausted — lowest priority
+}
+
+// decryptKey decrypts a key value, falling back to the raw value if decryption fails.
+func (p *KeyProvider) decryptKey(keyID uint, keyValue string) string {
+	decrypted, err := p.encryptionSvc.Decrypt(keyValue)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"keyID": keyID,
+			"error": err,
+		}).Debug("Failed to decrypt key value, using as-is")
+		return keyValue
+	}
+	return decrypted
 }
 
 // UpdateStatus 异步地提交一个 Key 状态更新任务。

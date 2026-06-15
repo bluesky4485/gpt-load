@@ -377,6 +377,13 @@ export default {
     modelRedirectInvalidFormat:
       "モデルリダイレクトルールのキーと値はすべて文字列である必要があります",
     modelRedirectEmptyModel: "モデル名を空にすることはできません",
+    mcpEnabled: "MCP 有効",
+    mcpDisabled: "MCP 無効",
+    mcpEnabledTooltip:
+      "このTavilyグループのモデルコンテキストプロトコル (MCP) エンドポイントを有効にします。有効にすると、クライアントは /mcp/{group_name} 経由でTavilyツールにアクセスできます",
+    quotaUsage: "クォータ使用量",
+    quotaUsageTip: "追跡対象キーの合計使用量 / 合計クォータ",
+    exhaustedKeys: "枯渇キー",
     never: "使用なし",
     daysAgo: "{days}日前",
     hoursAgo: "{hours}時間前",

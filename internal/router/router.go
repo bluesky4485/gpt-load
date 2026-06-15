@@ -4,6 +4,7 @@ import (
 	"embed"
 	"gpt-load/internal/handler"
 	"gpt-load/internal/i18n"
+	"gpt-load/internal/mcpserver"
 	"gpt-load/internal/middleware"
 	"gpt-load/internal/proxy"
 	"gpt-load/internal/services"
@@ -43,6 +44,7 @@ func NewRouter(
 	proxyServer *proxy.ProxyServer,
 	configManager types.ConfigManager,
 	groupManager *services.GroupManager,
+	mcpManager *mcpserver.Manager,
 	buildFS embed.FS,
 	indexPage []byte,
 ) *gin.Engine {
@@ -67,6 +69,7 @@ func NewRouter(
 	registerSystemRoutes(router, serverHandler)
 	registerAPIRoutes(router, serverHandler, configManager)
 	registerProxyRoutes(router, proxyServer, groupManager, serverHandler)
+	registerMCPRoutes(router, mcpManager)
 	registerFrontendRoutes(router, buildFS, indexPage)
 
 	return router
@@ -118,6 +121,7 @@ func registerProtectedAPIRoutes(api *gin.RouterGroup, serverHandler *handler.Ser
 		groups.DELETE("/:id", serverHandler.DeleteGroup)
 		groups.GET("/:id/stats", serverHandler.GetGroupStats)
 		groups.POST("/:id/copy", serverHandler.CopyGroup)
+		groups.PUT("/:id/mcp", serverHandler.ToggleMCP)
 
 		groups.GET("/:id/sub-groups", serverHandler.GetSubGroups)
 		groups.POST("/:id/sub-groups", serverHandler.AddSubGroups)
@@ -185,6 +189,12 @@ func registerProxyRoutes(
 	proxyGroup.Any("/*path", proxyServer.HandleProxy)
 }
 
+// registerMCPRoutes 注册MCP路由
+func registerMCPRoutes(router *gin.Engine, mcpManager *mcpserver.Manager) {
+	router.Any("/mcp/:group_name", mcpManager.Handler)
+	router.Any("/mcp/:group_name/*path", mcpManager.Handler)
+}
+
 // registerFrontendRoutes 注册前端路由
 func registerFrontendRoutes(router *gin.Engine, buildFS embed.FS, indexPage []byte) {
 	router.Use(gzip.Gzip(gzip.DefaultCompression))
@@ -197,7 +207,7 @@ func registerFrontendRoutes(router *gin.Engine, buildFS embed.FS, indexPage []by
 
 	router.Use(static.Serve("/", EmbedFolder(buildFS, "web/dist")))
 	router.NoRoute(func(c *gin.Context) {
-		if strings.HasPrefix(c.Request.RequestURI, "/api") || strings.HasPrefix(c.Request.RequestURI, "/proxy") {
+		if strings.HasPrefix(c.Request.RequestURI, "/api") || strings.HasPrefix(c.Request.RequestURI, "/proxy") || strings.HasPrefix(c.Request.RequestURI, "/mcp") {
 			c.JSON(http.StatusNotFound, gin.H{"error": "Not Found"})
 			return
 		}

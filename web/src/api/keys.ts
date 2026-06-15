@@ -72,6 +72,12 @@ export const keysApi = {
     return res.data;
   },
 
+  // 切换分组MCP开关
+  async toggleMCP(groupId: number, enabled: boolean): Promise<Group> {
+    const res = await http.put(`/groups/${groupId}/mcp`, { enabled });
+    return res.data;
+  },
+
   // 获取分组列表
   async listGroups(): Promise<Pick<Group, "id" | "name" | "display_name">[]> {
     const res = await http.get("/groups/list");

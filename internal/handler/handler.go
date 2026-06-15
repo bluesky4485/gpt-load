@@ -9,6 +9,7 @@ import (
 	"gpt-load/internal/config"
 	"gpt-load/internal/encryption"
 	"gpt-load/internal/i18n"
+	"gpt-load/internal/mcpserver"
 	"gpt-load/internal/services"
 	"gpt-load/internal/types"
 
@@ -33,6 +34,7 @@ type Server struct {
 	LogService                 *services.LogService
 	CommonHandler              *CommonHandler
 	EncryptionSvc              encryption.Service
+	MCPManager                 *mcpserver.Manager
 }
 
 // NewServerParams defines the dependencies for the NewServer constructor.
@@ -52,6 +54,7 @@ type NewServerParams struct {
 	LogService                 *services.LogService
 	CommonHandler              *CommonHandler
 	EncryptionSvc              encryption.Service
+	MCPManager                 *mcpserver.Manager
 }
 
 // NewServer creates a new handler instance with dependencies injected by dig.
@@ -71,6 +74,7 @@ func NewServer(params NewServerParams) *Server {
 		LogService:                 params.LogService,
 		CommonHandler:              params.CommonHandler,
 		EncryptionSvc:              params.EncryptionSvc,
+		MCPManager:                 params.MCPManager,
 	}
 }
 

@@ -78,6 +78,7 @@ interface GroupFormData {
   configItems: ConfigItem[];
   header_rules: HeaderRuleItem[];
   proxy_keys: string;
+  mcp_enabled: boolean;
   group_type?: string;
 }
 
@@ -103,6 +104,7 @@ const formData = reactive<GroupFormData>({
   configItems: [] as ConfigItem[],
   header_rules: [] as HeaderRuleItem[],
   proxy_keys: "",
+  mcp_enabled: false,
   group_type: "standard",
 });
 
@@ -304,6 +306,7 @@ function resetForm() {
     configItems: [],
     header_rules: [],
     proxy_keys: "",
+    mcp_enabled: false,
     group_type: "standard",
   });
 
@@ -350,6 +353,7 @@ function loadGroupData() {
       action: (rule.action as "set" | "remove") || "set",
     })),
     proxy_keys: props.group.proxy_keys || "",
+    mcp_enabled: props.group.mcp_enabled || false,
     group_type: props.group.group_type || "standard",
   });
 }
@@ -539,6 +543,7 @@ async function handleSubmit() {
           action: rule.action,
         })),
       proxy_keys: formData.proxy_keys,
+      mcp_enabled: formData.channel_type === "tavily" ? formData.mcp_enabled : false,
     };
 
     let res: Group;
@@ -746,6 +751,22 @@ async function handleSubmit() {
               :placeholder="t('keys.multiKeysPlaceholder')"
               size="medium"
             />
+          </n-form-item>
+
+          <!-- MCP开关：仅Tavily渠道显示 -->
+          <n-form-item v-if="formData.channel_type === 'tavily'" path="mcp_enabled">
+            <template #label>
+              <div class="form-label-with-tooltip">
+                {{ t("keys.mcpEnabled") }}
+                <n-tooltip trigger="hover" placement="top">
+                  <template #trigger>
+                    <n-icon :component="HelpCircleOutline" class="help-icon" />
+                  </template>
+                  {{ t("keys.mcpEnabledTooltip") }}
+                </n-tooltip>
+              </div>
+            </template>
+            <n-switch v-model:value="formData.mcp_enabled" />
           </n-form-item>
 
           <!-- Description takes full row -->

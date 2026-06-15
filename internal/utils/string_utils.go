@@ -5,13 +5,56 @@ import (
 	"strings"
 )
 
-// MaskAPIKey masks an API key for safe logging.
+// knownKeyPrefixes lists well-known API key prefixes that are safe to display in logs.
+// Preserving these prefixes aids identification without compromising security.
+var knownKeyPrefixes = []string{
+	"tvly-dev-",
+	"tvly-",
+	"sk-proj-",
+	"sk-",
+	"key-",
+	"ant-",
+}
+
+// MaskAPIKey masks an API key for safe logging, preserving known prefixes.
+// Examples:
+//
+//	"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" → "tvly-dev-****O42X"
+//	"sk-proj-abc123def456xyz" → "sk-proj-****6xyz"
+//	"short" → "****"
 func MaskAPIKey(key string) string {
 	length := len(key)
 	if length <= 8 {
-		return key
+		return "****"
 	}
-	return fmt.Sprintf("%s****%s", key[:4], key[length-4:])
+
+	// Detect and preserve known prefixes
+	prefixLen := 0
+	for _, prefix := range knownKeyPrefixes {
+		if strings.HasPrefix(key, prefix) {
+			prefixLen = len(prefix)
+			break
+		}
+	}
+
+	// Ensure we don't expose more than half the key via prefix
+	maxPrefix := length / 2
+	if prefixLen > maxPrefix {
+		prefixLen = maxPrefix
+	}
+
+	suffixLen := 4
+	// Ensure prefix + suffix doesn't overlap
+	if prefixLen+suffixLen >= length {
+		suffixLen = length - prefixLen - 1
+		if suffixLen < 0 {
+			suffixLen = 0
+		}
+	}
+
+	prefix := key[:prefixLen]
+	suffix := key[length-suffixLen:]
+	return fmt.Sprintf("%s****%s", prefix, suffix)
 }
 
 // TruncateString shortens a string to a maximum length.

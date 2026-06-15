@@ -100,6 +100,8 @@ type GroupCreateParams struct {
 	Config              map[string]any
 	HeaderRules         []models.HeaderRule
 	ProxyKeys           string
+	KeySelectionStrategy string
+	MCPEnabled           bool
 	SubGroups           []SubGroupInput
 }
 
@@ -122,6 +124,7 @@ type GroupUpdateParams struct {
 	Config              map[string]any
 	HeaderRules         *[]models.HeaderRule
 	ProxyKeys           *string
+	KeySelectionStrategy *string
 	SubGroups           *[]SubGroupInput
 }
 
@@ -145,12 +148,21 @@ type RequestStats struct {
 	FailureRate    float64 `json:"failure_rate"`
 }
 
+// QuotaStats captures Tavily quota usage summary for a group.
+type QuotaStats struct {
+	TrackedKeys    int64 `json:"tracked_keys"`    // keys with total_quota > 0
+	TotalQuota     int64 `json:"total_quota"`     // sum of total_quota across tracked keys
+	UsedQuota      int64 `json:"used_quota"`      // sum of used_quota across tracked keys
+	ExhaustedKeys  int64 `json:"exhausted_keys"`  // keys where used_quota >= total_quota
+}
+
 // GroupStats aggregates all per-group metrics for dashboard usage.
 type GroupStats struct {
 	KeyStats    KeyStats     `json:"key_stats"`
 	Stats24Hour RequestStats `json:"stats_24_hour"`
 	Stats7Day   RequestStats `json:"stats_7_day"`
 	Stats30Day  RequestStats `json:"stats_30_day"`
+	QuotaStats  *QuotaStats  `json:"quota_stats,omitempty"` // non-nil only for Tavily groups
 }
 
 // ConfigOption describes a configurable override exposed to clients.
@@ -174,6 +186,14 @@ func (s *GroupService) CreateGroup(ctx context.Context, params GroupCreateParams
 		return nil, NewI18nError(app_errors.ErrValidation, "validation.invalid_channel_type", map[string]any{"types": supported})
 	}
 
+	keySelectionStrategy := strings.TrimSpace(params.KeySelectionStrategy)
+	if keySelectionStrategy == "" {
+		keySelectionStrategy = models.KeySelectionRoundRobin
+	}
+	if keySelectionStrategy != models.KeySelectionRoundRobin && keySelectionStrategy != models.KeySelectionQuotaFirst {
+		return nil, NewI18nError(app_errors.ErrValidation, "validation.invalid_key_selection_strategy", nil)
+	}
+
 	groupType := strings.TrimSpace(params.GroupType)
 	if groupType == "" {
 		groupType = "standard"
@@ -194,7 +214,12 @@ func (s *GroupService) CreateGroup(ctx context.Context, params GroupCreateParams
 	case "standard":
 		testModel = strings.TrimSpace(params.TestModel)
 		if testModel == "" {
-			return nil, NewI18nError(app_errors.ErrValidation, "validation.test_model_required", nil)
+			// Tavily does not require a test model; auto-fill a default for logging purposes.
+			if channelType == "tavily" {
+				testModel = "tavily-search"
+			} else {
+				return nil, NewI18nError(app_errors.ErrValidation, "validation.test_model_required", nil)
+			}
 		}
 		cleaned, err := s.validateAndCleanUpstreams(params.Upstreams)
 		if err != nil {
@@ -213,12 +238,27 @@ func (s *GroupService) CreateGroup(ctx context.Context, params GroupCreateParams
 		return nil, err
 	}
 
+	// Apply channel-type-specific defaults when the user has not provided overrides.
+	if channelType == "tavily" {
+		if cleanedConfig == nil {
+			cleanedConfig = make(map[string]any)
+		}
+		if _, hasFailover := cleanedConfig["failover_status_codes"]; !hasFailover {
+			cleanedConfig["failover_status_codes"] = "401,429,432,433"
+		}
+	}
+
 	headerRulesJSON, err := s.normalizeHeaderRules(params.HeaderRules)
 	if err != nil {
 		return nil, err
 	}
 	if headerRulesJSON == nil {
 		headerRulesJSON = datatypes.JSON("[]")
+	}
+
+	// MCP is only supported for Tavily channel type.
+	if params.MCPEnabled && channelType != "tavily" {
+		return nil, NewI18nError(app_errors.ErrValidation, "validation.mcp_tavily_only", nil)
 	}
 
 	// Validate model redirect rules for aggregate groups
@@ -244,6 +284,8 @@ func (s *GroupService) CreateGroup(ctx context.Context, params GroupCreateParams
 		ParamOverrides:      params.ParamOverrides,
 		ModelRedirectRules:  convertToJSONMap(params.ModelRedirectRules),
 		ModelRedirectStrict: params.ModelRedirectStrict,
+		KeySelectionStrategy: keySelectionStrategy,
+		MCPEnabled:           params.MCPEnabled,
 		Config:              cleanedConfig,
 		HeaderRules:         headerRulesJSON,
 		ProxyKeys:           strings.TrimSpace(params.ProxyKeys),
@@ -466,11 +508,28 @@ func (s *GroupService) UpdateGroup(ctx context.Context, id uint, params GroupUpd
 		if err != nil {
 			return nil, err
 		}
+		// Apply channel-type-specific defaults when the user has not provided overrides.
+		if group.ChannelType == "tavily" {
+			if cleanedConfig == nil {
+				cleanedConfig = make(map[string]any)
+			}
+			if _, hasFailover := cleanedConfig["failover_status_codes"]; !hasFailover {
+				cleanedConfig["failover_status_codes"] = "401,429,432,433"
+			}
+		}
 		group.Config = cleanedConfig
 	}
 
 	if params.ProxyKeys != nil {
 		group.ProxyKeys = strings.TrimSpace(*params.ProxyKeys)
+	}
+
+	if params.KeySelectionStrategy != nil {
+		strategy := strings.TrimSpace(*params.KeySelectionStrategy)
+		if strategy != models.KeySelectionRoundRobin && strategy != models.KeySelectionQuotaFirst {
+			return nil, NewI18nError(app_errors.ErrValidation, "validation.invalid_key_selection_strategy", nil)
+		}
+		group.KeySelectionStrategy = strategy
 	}
 
 	if params.HeaderRules != nil {
@@ -494,6 +553,33 @@ func (s *GroupService) UpdateGroup(ctx context.Context, id uint, params GroupUpd
 
 	if err := s.groupManager.Invalidate(); err != nil {
 		logrus.WithContext(ctx).WithError(err).Error("failed to invalidate group cache")
+	}
+
+	return &group, nil
+}
+
+// ToggleMCP enables or disables MCP for a group. Only Tavily channel groups support MCP.
+func (s *GroupService) ToggleMCP(ctx context.Context, id uint, enabled bool) (*models.Group, error) {
+	var group models.Group
+	if err := s.db.WithContext(ctx).First(&group, id).Error; err != nil {
+		return nil, app_errors.ParseDBError(err)
+	}
+
+	if group.ChannelType != "tavily" && enabled {
+		return nil, NewI18nError(app_errors.ErrValidation, "validation.mcp_tavily_only", nil)
+	}
+
+	if group.MCPEnabled == enabled {
+		return &group, nil
+	}
+
+	group.MCPEnabled = enabled
+	if err := s.db.WithContext(ctx).Save(&group).Error; err != nil {
+		return nil, app_errors.ParseDBError(err)
+	}
+
+	if err := s.groupManager.Invalidate(); err != nil {
+		logrus.WithContext(ctx).WithError(err).Error("failed to invalidate group cache after MCP toggle")
 	}
 
 	return &group, nil
@@ -767,6 +853,11 @@ func (s *GroupService) getStandardGroupStats(ctx context.Context, groupID uint) 
 		allErrors = append(allErrors, errs...)
 	}
 
+	// Fetch quota statistics for Tavily groups
+	if quotaStats, err := s.fetchQuotaStats(ctx, groupID); err == nil && quotaStats != nil {
+		stats.QuotaStats = quotaStats
+	}
+
 	// Handle errors
 	if len(allErrors) > 0 {
 		logrus.WithContext(ctx).WithError(allErrors[0]).Error("errors occurred while fetching group stats")
@@ -778,6 +869,42 @@ func (s *GroupService) getStandardGroupStats(ctx context.Context, groupID uint) 
 	}
 
 	return stats, nil
+}
+
+// fetchQuotaStats returns Tavily quota usage summary for a group.
+// Returns nil if the group has no keys with quota tracking (total_quota > 0).
+func (s *GroupService) fetchQuotaStats(ctx context.Context, groupID uint) (*QuotaStats, error) {
+	var result struct {
+		TrackedKeys   int64
+		TotalQuotaSum int64
+		UsedQuotaSum  int64
+		ExhaustedKeys int64
+	}
+
+	err := s.db.WithContext(ctx).Model(&models.APIKey{}).
+		Select(`
+			COUNT(CASE WHEN total_quota > 0 THEN 1 END) AS tracked_keys,
+			COALESCE(SUM(CASE WHEN total_quota > 0 THEN total_quota ELSE 0 END), 0) AS total_quota_sum,
+			COALESCE(SUM(CASE WHEN total_quota > 0 THEN used_quota ELSE 0 END), 0) AS used_quota_sum,
+			COUNT(CASE WHEN total_quota > 0 AND used_quota >= total_quota THEN 1 END) AS exhausted_keys
+		`).
+		Where("group_id = ?", groupID).
+		Scan(&result).Error
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch quota stats: %w", err)
+	}
+
+	// Only return quota stats if there are tracked keys
+	if result.TrackedKeys == 0 {
+		return nil, nil
+	}
+
+	return &QuotaStats{
+		TrackedKeys:   result.TrackedKeys,
+		TotalQuota:    result.TotalQuotaSum,
+		UsedQuota:     result.UsedQuotaSum,
+		ExhaustedKeys: result.ExhaustedKeys,
+	}, nil
 }
 
 func (s *GroupService) getAggregateGroupStats(ctx context.Context, groupID uint) (*GroupStats, error) {

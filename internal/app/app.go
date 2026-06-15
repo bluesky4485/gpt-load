@@ -34,6 +34,8 @@ type App struct {
 	logCleanupService *services.LogCleanupService
 	requestLogService *services.RequestLogService
 	cronChecker       *keypool.CronChecker
+	quotaTracker      *keypool.QuotaTracker
+	cacheService      *services.CacheService
 	keyPoolProvider   *keypool.KeyProvider
 	proxyServer       *proxy.ProxyServer
 	storage           store.Store
@@ -51,6 +53,8 @@ type AppParams struct {
 	LogCleanupService *services.LogCleanupService
 	RequestLogService *services.RequestLogService
 	CronChecker       *keypool.CronChecker
+	QuotaTracker      *keypool.QuotaTracker
+	CacheService      *services.CacheService
 	KeyPoolProvider   *keypool.KeyProvider
 	ProxyServer       *proxy.ProxyServer
 	Storage           store.Store
@@ -67,6 +71,8 @@ func NewApp(params AppParams) *App {
 		logCleanupService: params.LogCleanupService,
 		requestLogService: params.RequestLogService,
 		cronChecker:       params.CronChecker,
+		quotaTracker:      params.QuotaTracker,
+		cacheService:      params.CacheService,
 		keyPoolProvider:   params.KeyPoolProvider,
 		proxyServer:       params.ProxyServer,
 		storage:           params.Storage,
@@ -99,6 +105,7 @@ func (a *App) Start() error {
 			&models.APIKey{},
 			&models.RequestLog{},
 			&models.GroupHourlyStat{},
+			&models.SearchCache{},
 		); err != nil {
 			return fmt.Errorf("database auto-migration failed: %w", err)
 		}
@@ -126,6 +133,8 @@ func (a *App) Start() error {
 		a.requestLogService.Start()
 		a.logCleanupService.Start()
 		a.cronChecker.Start()
+		a.quotaTracker.Start()
+		a.cacheService.Start()
 	} else {
 		logrus.Info("Starting as Slave Node.")
 		a.settingsManager.Initialize(a.storage, a.groupManager, a.configManager.IsMaster())
@@ -190,6 +199,8 @@ func (a *App) Stop(ctx context.Context) {
 	if serverConfig.IsMaster {
 		stoppableServices = append(stoppableServices,
 			a.cronChecker.Stop,
+			a.quotaTracker.Stop,
+			a.cacheService.Stop,
 			a.logCleanupService.Stop,
 			a.requestLogService.Stop,
 		)

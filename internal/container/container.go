@@ -10,6 +10,7 @@ import (
 	"gpt-load/internal/handler"
 	"gpt-load/internal/httpclient"
 	"gpt-load/internal/keypool"
+	"gpt-load/internal/mcpserver"
 	"gpt-load/internal/proxy"
 	"gpt-load/internal/router"
 	"gpt-load/internal/services"
@@ -85,6 +86,12 @@ func BuildContainer() (*dig.Container, error) {
 	if err := container.Provide(services.NewAggregateGroupService); err != nil {
 		return nil, err
 	}
+	if err := container.Provide(services.NewCacheService); err != nil {
+		return nil, err
+	}
+	if err := container.Provide(mcpserver.NewManager); err != nil {
+		return nil, err
+	}
 	if err := container.Provide(keypool.NewProvider); err != nil {
 		return nil, err
 	}
@@ -92,6 +99,9 @@ func BuildContainer() (*dig.Container, error) {
 		return nil, err
 	}
 	if err := container.Provide(keypool.NewCronChecker); err != nil {
+		return nil, err
+	}
+	if err := container.Provide(keypool.NewQuotaTracker); err != nil {
 		return nil, err
 	}
 

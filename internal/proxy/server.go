@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"path"
 	"time"
 
 	"gpt-load/internal/channel"
@@ -34,6 +35,8 @@ type ProxyServer struct {
 	channelFactory    *channel.Factory
 	requestLogService *services.RequestLogService
 	encryptionSvc     encryption.Service
+	quotaTracker      *keypool.QuotaTracker
+	cacheService      *services.CacheService
 }
 
 // NewProxyServer creates a new proxy server
@@ -45,6 +48,8 @@ func NewProxyServer(
 	channelFactory *channel.Factory,
 	requestLogService *services.RequestLogService,
 	encryptionSvc encryption.Service,
+	quotaTracker *keypool.QuotaTracker,
+	cacheService *services.CacheService,
 ) (*ProxyServer, error) {
 	return &ProxyServer{
 		keyProvider:       keyProvider,
@@ -54,6 +59,8 @@ func NewProxyServer(
 		channelFactory:    channelFactory,
 		requestLogService: requestLogService,
 		encryptionSvc:     encryptionSvc,
+		quotaTracker:      quotaTracker,
+		cacheService:      cacheService,
 	}, nil
 }
 
@@ -110,6 +117,22 @@ func (ps *ProxyServer) HandleProxy(c *gin.Context) {
 
 	isStream := channelHandler.IsStreamRequest(c, bodyBytes)
 
+	// Cache check for Tavily groups (skip for streaming requests).
+	if group.ChannelType == "tavily" && !isStream && ps.cacheService != nil {
+		endpoint := extractEndpoint(c.Request.URL.Path)
+		if cacheKey, err := models.GenerateCacheKey(endpoint, finalBodyBytes); err == nil {
+			if cached := ps.cacheService.Get(cacheKey); cached != nil {
+				logrus.WithFields(logrus.Fields{
+					"group":    group.Name,
+					"endpoint": endpoint,
+					"hits":     cached.HitCount,
+				}).Debug("Cache hit, serving cached response")
+				ps.handleCachedResponse(c, cached, startTime, channelHandler, originalGroup, group, finalBodyBytes)
+				return
+			}
+		}
+	}
+
 	ps.executeRequestWithRetry(c, channelHandler, originalGroup, group, finalBodyBytes, isStream, startTime, 0)
 }
 
@@ -126,7 +149,7 @@ func (ps *ProxyServer) executeRequestWithRetry(
 ) {
 	cfg := group.EffectiveConfig
 
-	apiKey, err := ps.keyProvider.SelectKey(group.ID)
+	apiKey, err := ps.keyProvider.SelectKey(group.ID, group.KeySelectionStrategy)
 	if err != nil {
 		logrus.Errorf("Failed to select a key for group %s on attempt %d: %v", group.Name, retryCount+1, err)
 		response.Error(c, app_errors.NewAPIError(app_errors.ErrNoKeysAvailable, err.Error()))
@@ -237,6 +260,13 @@ func (ps *ProxyServer) executeRequestWithRetry(
 		// 使用解析后的错误信息更新密钥状态
 		ps.keyProvider.UpdateStatus(apiKey, group, false, parsedError)
 
+		// Layer 4: Passive exhaustion detection for Tavily 432/433 responses
+		if group.ChannelType == "tavily" && ps.quotaTracker != nil {
+			if statusCode == 432 || statusCode == 433 {
+				ps.quotaTracker.MarkExhausted(apiKey.ID)
+			}
+		}
+
 		// 判断是否为最后一次尝试
 		isLastAttempt := retryCount >= cfg.MaxRetries
 		requestType := models.RequestTypeRetry
@@ -264,6 +294,11 @@ func (ps *ProxyServer) executeRequestWithRetry(
 	// ps.keyProvider.UpdateStatus(apiKey, group, true) // 请求成功不再重置成功次数，减少IO消耗
 	logrus.Debugf("Request for group %s succeeded on attempt %d with key %s", group.Name, retryCount+1, utils.MaskAPIKey(apiKey.KeyValue))
 
+	// Layer 1: Increment quota usage for Tavily groups
+	if group.ChannelType == "tavily" && ps.quotaTracker != nil {
+		ps.quotaTracker.IncrementUsed(apiKey.ID)
+	}
+
 	// Check if this is a model list request (needs special handling)
 	if shouldInterceptModelList(c.Request.URL.Path, c.Request.Method) {
 		ps.handleModelListResponse(c, resp, group, channelHandler)
@@ -277,12 +312,25 @@ func (ps *ProxyServer) executeRequestWithRetry(
 
 		if isStream {
 			ps.handleStreamingResponse(c, resp)
+		} else if group.ChannelType == "tavily" && ps.cacheService != nil && resp.StatusCode == http.StatusOK {
+			// Cache-eligible Tavily response: capture body, cache it, then send to client.
+			ps.handleCacheableResponse(c, resp, group, finalBodyBytes)
 		} else {
 			ps.handleNormalResponse(c, resp)
 		}
 	}
 
 	ps.logRequest(c, originalGroup, group, apiKey, startTime, resp.StatusCode, nil, isStream, upstreamURL, channelHandler, bodyBytes, models.RequestTypeFinal)
+}
+
+// extractEndpoint extracts the API endpoint name (last path segment) from a URL path.
+// e.g., "/v0/search" → "search", "/v1/extract" → "extract".
+func extractEndpoint(urlPath string) string {
+	base := path.Base(urlPath)
+	if base == "." || base == "/" {
+		return "unknown"
+	}
+	return base
 }
 
 func shouldFailoverOnStatusCode(statusCode int, group *models.Group) bool {

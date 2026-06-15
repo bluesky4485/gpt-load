@@ -14,6 +14,12 @@ const (
 	KeyStatusInvalid = "invalid"
 )
 
+// KeySelectionStrategy 常量
+const (
+	KeySelectionRoundRobin = "round_robin"
+	KeySelectionQuotaFirst = "quota_first"
+)
+
 // SystemSetting 对应 system_settings 表
 type SystemSetting struct {
 	ID           uint      `gorm:"primaryKey;autoIncrement" json:"id"`
@@ -99,6 +105,8 @@ type Group struct {
 	HeaderRules         datatypes.JSON       `gorm:"type:json" json:"header_rules"`
 	ModelRedirectRules  datatypes.JSONMap    `gorm:"type:json" json:"model_redirect_rules"`
 	ModelRedirectStrict bool                 `gorm:"default:false" json:"model_redirect_strict"`
+	KeySelectionStrategy string              `gorm:"type:varchar(50);default:'round_robin'" json:"key_selection_strategy"`
+	MCPEnabled           bool                `gorm:"default:false" json:"mcp_enabled"`
 	APIKeys             []APIKey             `gorm:"foreignKey:GroupID" json:"api_keys"`
 	SubGroups           []GroupSubGroup      `gorm:"-" json:"sub_groups,omitempty"`
 	LastValidatedAt     *time.Time           `json:"last_validated_at"`
@@ -122,6 +130,8 @@ type APIKey struct {
 	Notes        string     `gorm:"type:varchar(255);default:''" json:"notes"`
 	RequestCount int64      `gorm:"not null;default:0" json:"request_count"`
 	FailureCount int64      `gorm:"not null;default:0" json:"failure_count"`
+	TotalQuota   int        `gorm:"not null;default:0" json:"total_quota"`
+	UsedQuota    int        `gorm:"not null;default:0" json:"used_quota"`
 	LastUsedAt   *time.Time `gorm:"index:idx_api_keys_group_last_used_id,priority:2" json:"last_used_at"`
 	CreatedAt    time.Time  `json:"created_at"`
 	UpdatedAt    time.Time  `json:"updated_at"`

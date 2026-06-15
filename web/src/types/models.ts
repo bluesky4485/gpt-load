@@ -12,7 +12,7 @@ export type KeyStatus = "active" | "invalid" | undefined;
 export type GroupType = "standard" | "aggregate";
 
 // 渠道类型
-export type ChannelType = "openai" | "openai-response" | "gemini" | "anthropic";
+export type ChannelType = "openai" | "openai-response" | "gemini" | "anthropic" | "tavily";
 
 // 数据模型定义
 export interface APIKey {
@@ -80,6 +80,8 @@ export interface Group {
   model_redirect_strict: boolean;
   header_rules?: HeaderRule[];
   proxy_keys: string;
+  key_selection_strategy?: string;
+  mcp_enabled?: boolean;
   group_type?: GroupType;
   sub_groups?: SubGroupInfo[]; // 子分组列表（仅聚合分组）
   sub_group_ids?: number[]; // 子分组ID列表
@@ -94,12 +96,21 @@ export interface GroupConfigOption {
   default_value: string | number;
 }
 
+// QuotaStats defines Tavily quota usage summary for a group.
+export interface QuotaStats {
+  tracked_keys: number;
+  total_quota: number;
+  used_quota: number;
+  exhausted_keys: number;
+}
+
 // GroupStatsResponse defines the complete statistics for a group.
 export interface GroupStatsResponse {
   key_stats: KeyStats;
   stats_24_hour: RequestStats;
   stats_7_day: RequestStats;
   stats_30_day: RequestStats;
+  quota_stats?: QuotaStats;
 }
 
 // KeyStats defines the statistics for API keys in a group.
