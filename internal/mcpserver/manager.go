@@ -15,6 +15,12 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+// contextKey is an unexported type for context keys defined in this package.
+type contextKey string
+
+// ginContextKey is the context key for the gin.Context, passed through MCP tool handlers.
+const ginContextKey contextKey = "gin-context"
+
 // Manager manages per-group MCP servers for Tavily tool access.
 // Each MCP-enabled group gets its own MCPServer with Tavily-specific tools.
 type Manager struct {
@@ -62,7 +68,9 @@ func (m *Manager) Handler(c *gin.Context) {
 	}
 
 	srv := m.getOrCreateServer(group)
-	srv.ServeHTTP(c.Writer, c.Request)
+	// Embed gin context into request context so MCP tool handlers can access it for logging.
+	reqWithCtx := c.Request.WithContext(context.WithValue(c.Request.Context(), ginContextKey, c))
+	srv.ServeHTTP(c.Writer, reqWithCtx)
 }
 
 // getOrCreateServer returns the cached MCP server for a group, creating one if needed.
@@ -119,10 +127,17 @@ func (m *Manager) buildServer(group *models.Group) *mcpserver.StreamableHTTPServ
 // retry/failover, auth injection, quota tracking, and caching.
 // This is the bridge between MCP tool handlers and the proxy core.
 func (m *Manager) executeProxyTool(ctx context.Context, group *models.Group, endpoint string, body []byte) ([]byte, int, error) {
+	// Extract gin context from MCP tool handler context for request logging.
+	var ginCtx *gin.Context
+	if v, ok := ctx.Value(ginContextKey).(*gin.Context); ok {
+		ginCtx = v
+	}
+
 	resp, err := m.proxyServer.Execute(ctx, &proxy.ProxyRequest{
-		Group:    group,
-		Endpoint: endpoint,
-		Body:     body,
+		Group:      group,
+		Endpoint:   endpoint,
+		Body:       body,
+		GinContext:  ginCtx,
 	})
 	if err != nil {
 		if resp != nil {

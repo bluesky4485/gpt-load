@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"gpt-load/internal/config"
+	"gpt-load/internal/encryption"
 	"gpt-load/internal/models"
 	"io"
 	"net/http"
@@ -24,6 +25,7 @@ import (
 type QuotaTracker struct {
 	db              *gorm.DB
 	settingsManager *config.SystemSettingsManager
+	encryptionSvc   encryption.Service
 	httpClient      *http.Client
 	stopChan        chan struct{}
 	wg              sync.WaitGroup
@@ -37,10 +39,11 @@ const (
 )
 
 // NewQuotaTracker creates a new QuotaTracker.
-func NewQuotaTracker(db *gorm.DB, settingsManager *config.SystemSettingsManager) *QuotaTracker {
+func NewQuotaTracker(db *gorm.DB, settingsManager *config.SystemSettingsManager, encryptionSvc encryption.Service) *QuotaTracker {
 	return &QuotaTracker{
 		db:              db,
 		settingsManager: settingsManager,
+		encryptionSvc:   encryptionSvc,
 		httpClient: &http.Client{
 			Timeout: 15 * time.Second,
 		},
@@ -278,7 +281,12 @@ func (qt *QuotaTracker) syncAllKeys() {
 			if upstream == "" {
 				return fmt.Errorf("no upstream URL for group %d", key.GroupID)
 			}
-			return qt.SyncKey(ctx, key.ID, key.KeyValue, upstream)
+			decryptedKey, err := qt.encryptionSvc.Decrypt(key.KeyValue)
+				if err != nil {
+					logrus.WithError(err).WithField("keyID", key.ID).Error("QuotaTracker: Failed to decrypt key, skipping sync")
+					return fmt.Errorf("failed to decrypt key %d: %w", key.ID, err)
+				}
+				return qt.SyncKey(ctx, key.ID, decryptedKey, upstream)
 		},
 	)
 

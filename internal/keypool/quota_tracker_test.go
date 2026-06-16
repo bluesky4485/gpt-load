@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"gpt-load/internal/encryption"
 	"gpt-load/internal/models"
 	"net/http"
 	"net/http/httptest"
@@ -36,9 +37,12 @@ func newTestQuotaTracker(t *testing.T) (*QuotaTracker, *gorm.DB) {
 		t.Fatalf("failed to auto-migrate: %v", err)
 	}
 
+	encSvc, _ := encryption.NewService("") // no-op encryption
+
 	qt := &QuotaTracker{
 		db:              db,
 		settingsManager: nil, // not needed for these tests
+		encryptionSvc:   encSvc,
 		httpClient:      &http.Client{Timeout: 5 * time.Second},
 		stopChan:        make(chan struct{}),
 	}

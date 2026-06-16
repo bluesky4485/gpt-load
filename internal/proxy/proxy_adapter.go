@@ -14,15 +14,17 @@ import (
 	"gpt-load/internal/models"
 	"gpt-load/internal/utils"
 
+	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
 )
 
 // ProxyRequest represents a programmatic request through the proxy pipeline.
 // Used by MCP tools to reuse key management, retry, failover, and quota tracking.
 type ProxyRequest struct {
-	Group    *models.Group
-	Endpoint string // e.g., "search", "extract", "crawl", "map"
-	Body     []byte // JSON request body
+	Group      *models.Group
+	Endpoint   string     // e.g., "search", "extract", "crawl", "map"
+	Body       []byte     // JSON request body
+	GinContext *gin.Context // Original gin context for logging (source IP, user agent, etc.)
 }
 
 // ProxyResponse represents the result of a proxied request.
@@ -61,6 +63,10 @@ func (ps *ProxyServer) Execute(ctx context.Context, proxyReq *ProxyRequest) (*Pr
 					"endpoint": proxyReq.Endpoint,
 					"hits":     cached.HitCount,
 				}).Debug("MCP cache hit")
+
+				ps.logMCPRequest(proxyReq.GinContext, group, nil, time.Now(),
+					cached.StatusCode, nil, false, "", proxyReq.Endpoint, finalBody, models.RequestTypeFinal)
+
 				return &ProxyResponse{
 					StatusCode: cached.StatusCode,
 					Body:       []byte(cached.ResponseBody),
@@ -72,7 +78,7 @@ func (ps *ProxyServer) Execute(ctx context.Context, proxyReq *ProxyRequest) (*Pr
 	}
 
 	// 4. Execute with retry.
-	return ps.executeProxy(ctx, channelHandler, group, finalBody, proxyReq.Endpoint, startTime, 0)
+	return ps.executeProxy(ctx, channelHandler, group, finalBody, proxyReq.Endpoint, proxyReq.GinContext, startTime, 0)
 }
 
 // executeProxy is the recursive retry loop for programmatic proxy execution.
@@ -87,6 +93,7 @@ func (ps *ProxyServer) executeProxy(
 	group *models.Group,
 	bodyBytes []byte,
 	endpoint string,
+	ginCtx *gin.Context,
 	startTime time.Time,
 	retryCount int,
 ) (*ProxyResponse, error) {
@@ -152,6 +159,7 @@ func (ps *ProxyServer) executeProxy(
 		if err != nil && app_errors.IsIgnorableError(err) {
 			logrus.Debugf("MCP proxy client-side ignorable error for key %s: %v",
 				utils.MaskAPIKey(apiKey.KeyValue), err)
+			ps.logMCPRequest(ginCtx, group, apiKey, startTime, 499, err, false, upstreamURL, endpoint, bodyBytes, models.RequestTypeFinal)
 			return nil, fmt.Errorf("client disconnected: %w", err)
 		}
 
@@ -160,10 +168,17 @@ func (ps *ProxyServer) executeProxy(
 				retryCount+1, cfg.MaxRetries, utils.MaskAPIKey(apiKey.KeyValue), err)
 			ps.keyProvider.UpdateStatus(apiKey, group, false, err.Error())
 
-			if retryCount >= cfg.MaxRetries {
+			isLastAttempt := retryCount >= cfg.MaxRetries
+			requestType := models.RequestTypeRetry
+			if isLastAttempt {
+				requestType = models.RequestTypeFinal
+			}
+			ps.logMCPRequest(ginCtx, group, apiKey, startTime, 500, err, false, upstreamURL, endpoint, bodyBytes, requestType)
+
+			if isLastAttempt {
 				return nil, fmt.Errorf("upstream request failed after %d attempts: %w", retryCount+1, err)
 			}
-			return ps.executeProxy(ctx, channelHandler, group, bodyBytes, endpoint, startTime, retryCount+1)
+			return ps.executeProxy(ctx, channelHandler, group, bodyBytes, endpoint, ginCtx, startTime, retryCount+1)
 		}
 
 		// Failover status code matched.
@@ -186,7 +201,14 @@ func (ps *ProxyServer) executeProxy(
 			}
 		}
 
-		if retryCount >= cfg.MaxRetries {
+		isLastAttempt := retryCount >= cfg.MaxRetries
+		requestType := models.RequestTypeRetry
+		if isLastAttempt {
+			requestType = models.RequestTypeFinal
+		}
+		ps.logMCPRequest(ginCtx, group, apiKey, startTime, resp.StatusCode, fmt.Errorf("%s", parsedError), false, upstreamURL, endpoint, bodyBytes, requestType)
+
+		if isLastAttempt {
 			return &ProxyResponse{
 				StatusCode: resp.StatusCode,
 				Body:       errorBody,
@@ -194,7 +216,7 @@ func (ps *ProxyServer) executeProxy(
 			}, fmt.Errorf("upstream error after %d attempts (HTTP %d): %s", retryCount+1, resp.StatusCode, parsedError)
 		}
 
-		return ps.executeProxy(ctx, channelHandler, group, bodyBytes, endpoint, startTime, retryCount+1)
+		return ps.executeProxy(ctx, channelHandler, group, bodyBytes, endpoint, ginCtx, startTime, retryCount+1)
 	}
 
 	// Success path.
@@ -211,6 +233,9 @@ func (ps *ProxyServer) executeProxy(
 	if readErr != nil {
 		return nil, fmt.Errorf("failed to read response body: %w", readErr)
 	}
+
+	// Log successful request.
+	ps.logMCPRequest(ginCtx, group, apiKey, startTime, resp.StatusCode, nil, false, upstreamURL, endpoint, bodyBytes, models.RequestTypeFinal)
 
 	// Cache successful Tavily responses.
 	if group.ChannelType == "tavily" && ps.cacheService != nil && resp.StatusCode == http.StatusOK {
@@ -230,6 +255,72 @@ func (ps *ProxyServer) executeProxy(
 		Body:       respBody,
 		Headers:    resp.Header.Clone(),
 	}, nil
+}
+
+// logMCPRequest records a request log entry for MCP proxy calls.
+func (ps *ProxyServer) logMCPRequest(
+	ginCtx *gin.Context,
+	group *models.Group,
+	apiKey *models.APIKey,
+	startTime time.Time,
+	statusCode int,
+	finalError error,
+	isStream bool,
+	upstreamAddr string,
+	endpoint string,
+	bodyBytes []byte,
+	requestType string,
+) {
+	if ps.requestLogService == nil {
+		return
+	}
+
+	var requestBodyToLog, sourceIP, userAgent string
+
+	if ginCtx != nil {
+		sourceIP = ginCtx.ClientIP()
+		if group.EffectiveConfig.EnableRequestBodyLogging {
+			requestBodyToLog = utils.TruncateString(string(bodyBytes), 65000)
+			userAgent = ginCtx.Request.UserAgent()
+		}
+	}
+
+	duration := time.Since(startTime).Milliseconds()
+
+	logEntry := &models.RequestLog{
+		GroupID:      group.ID,
+		GroupName:    group.Name,
+		IsSuccess:    finalError == nil && statusCode < 400,
+		SourceIP:     sourceIP,
+		StatusCode:   statusCode,
+		RequestPath:  utils.TruncateString(fmt.Sprintf("/mcp/%s/%s", group.Name, endpoint), 500),
+		Duration:     duration,
+		UserAgent:    userAgent,
+		RequestType:  requestType,
+		IsStream:     isStream,
+		UpstreamAddr: utils.TruncateString(upstreamAddr, 500),
+		RequestBody:  requestBodyToLog,
+		Model:        fmt.Sprintf("tavily-%s", endpoint),
+	}
+
+	if apiKey != nil {
+		encryptedKeyValue, err := ps.encryptionSvc.Encrypt(apiKey.KeyValue)
+		if err != nil {
+			logrus.WithError(err).Error("Failed to encrypt key value for MCP logging")
+			logEntry.KeyValue = "failed-to-encryption"
+		} else {
+			logEntry.KeyValue = encryptedKeyValue
+		}
+		logEntry.KeyHash = ps.encryptionSvc.Hash(apiKey.KeyValue)
+	}
+
+	if finalError != nil {
+		logEntry.ErrorMessage = finalError.Error()
+	}
+
+	if err := ps.requestLogService.Record(logEntry); err != nil {
+		logrus.Errorf("Failed to record MCP request log: %v", err)
+	}
 }
 
 // proxyResponseToJSON is a helper that unmarshals the proxy response body into a JSON object.

@@ -69,7 +69,7 @@ func NewRouter(
 	registerSystemRoutes(router, serverHandler)
 	registerAPIRoutes(router, serverHandler, configManager)
 	registerProxyRoutes(router, proxyServer, groupManager, serverHandler)
-	registerMCPRoutes(router, mcpManager)
+	registerMCPRoutes(router, mcpManager, groupManager)
 	registerFrontendRoutes(router, buildFS, indexPage)
 
 	return router
@@ -190,9 +190,11 @@ func registerProxyRoutes(
 }
 
 // registerMCPRoutes 注册MCP路由
-func registerMCPRoutes(router *gin.Engine, mcpManager *mcpserver.Manager) {
-	router.Any("/mcp/:group_name", mcpManager.Handler)
-	router.Any("/mcp/:group_name/*path", mcpManager.Handler)
+func registerMCPRoutes(router *gin.Engine, mcpManager *mcpserver.Manager, groupManager *services.GroupManager) {
+	mcpGroup := router.Group("/mcp/:group_name")
+	mcpGroup.Use(middleware.ProxyAuth(groupManager))
+	mcpGroup.Any("", mcpManager.Handler)
+	mcpGroup.Any("/*path", mcpManager.Handler)
 }
 
 // registerFrontendRoutes 注册前端路由

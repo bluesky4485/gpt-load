@@ -1,16 +1,19 @@
 # Default target
 .DEFAULT_GOAL := help
 
+# Extract version from Go source
+VERSION := $(shell grep 'var Version' internal/version/version.go | sed 's/.*"\(.*\)"/\1/')
+
 # ==============================================================================
 # Run & Development
 # ==============================================================================
 .PHONY: run
 run: ## Build frontend and run server
 	@echo "--- Building frontend... ---"
-	cd web && npm install && npm run build
+	cd web && npm install && VITE_VERSION=$(VERSION) npm run build
 	@echo "--- Preparing backend... ---"
 	@echo "--- Starting backend... ---"
-	go run ./main.go
+	go run -ldflags "-X gpt-load/internal/version.Version=$(VERSION)" ./main.go
 
 .PHONY: dev
 dev: ## Run in development mode (with race detection)

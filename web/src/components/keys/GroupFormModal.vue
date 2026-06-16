@@ -67,7 +67,7 @@ interface GroupFormData {
   display_name: string;
   description: string;
   upstreams: UpstreamInfo[];
-  channel_type: "anthropic" | "gemini" | "openai" | "openai-response";
+  channel_type: "anthropic" | "gemini" | "openai" | "openai-response" | "tavily";
   sort: number;
   test_model: string;
   validation_endpoint: string;
@@ -129,6 +129,8 @@ const testModelPlaceholder = computed(() => {
       return "gemini-2.0-flash-lite";
     case "anthropic":
       return "claude-3-haiku-20240307";
+    case "tavily":
+      return "tavily";
     default:
       return t("keys.enterModelName");
   }
@@ -143,6 +145,8 @@ const upstreamPlaceholder = computed(() => {
       return "https://generativelanguage.googleapis.com";
     case "anthropic":
       return "https://api.anthropic.com";
+    case "tavily":
+      return "https://api.tavily.com";
     default:
       return t("keys.enterUpstreamUrl");
   }
@@ -158,6 +162,8 @@ const validationEndpointPlaceholder = computed(() => {
       return "/v1/messages";
     case "gemini":
       return ""; // Gemini 不显示此字段
+    case "tavily":
+      return "/search";
     default:
       return t("keys.enterValidationPath");
   }
@@ -258,6 +264,8 @@ function getOldDefaultTestModel(channelType: string): string {
       return "gemini-2.0-flash-lite";
     case "anthropic":
       return "claude-3-haiku-20240307";
+    case "tavily":
+      return "tavily";
     default:
       return "";
   }
@@ -272,6 +280,8 @@ function getOldDefaultUpstream(channelType: string): string {
       return "https://generativelanguage.googleapis.com";
     case "anthropic":
       return "https://api.anthropic.com";
+    case "tavily":
+      return "https://api.tavily.com";
     default:
       return "";
   }
@@ -715,6 +725,8 @@ async function handleSubmit() {
                       • OpenAI Response: /v1/responses
                       <br />
                       • Anthropic: /v1/messages
+                      <br />
+                      • Tavily: /search
                       <br />
                       {{ t("keys.testPathTooltip2") }}
                     </div>
