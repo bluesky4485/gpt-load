@@ -26,6 +26,9 @@ For detailed documentation, please visit [Official Documentation](https://www.gp
 - **High-Performance Design**: Zero-copy streaming, connection pool reuse, and atomic operations
 - **Production Ready**: Graceful shutdown, error recovery, and comprehensive security mechanisms
 - **Dual Authentication**: Separate authentication for management and proxy, with proxy authentication supporting global and group-level keys
+- **MCP Server Support**: Built-in Model Context Protocol server for Tavily search integration with AI tools (Claude Desktop, Cursor, etc.)
+- **Response Caching**: Intelligent caching for Tavily API responses to reduce costs and improve performance
+- **Quota Tracking**: Real-time monitoring of Tavily API usage with automatic monthly resets and exhaustion detection
 
 ## Supported AI Services
 
@@ -34,6 +37,7 @@ GPT-Load serves as a transparent proxy service, completely preserving the native
 - **OpenAI Format**: Official OpenAI API, Azure OpenAI, and other OpenAI-compatible services
 - **Google Gemini Format**: Native APIs for Gemini Pro, Gemini Pro Vision, and other models
 - **Anthropic Claude Format**: Claude series models, supporting high-quality conversations and text generation
+- **Tavily Search API**: Real-time search, content extraction, website crawling, and site mapping with MCP server support
 
 ## Quick Start
 
@@ -240,6 +244,7 @@ Supported Proxy Protocol Formats:
 | Log Retention Days | `request_log_retention_days`         | 7                       | ❌             | Request log retention days, 0 for no cleanup |
 | Log Write Interval | `request_log_write_interval_minutes` | 1                       | ❌             | Log write to database cycle (minutes)        |
 | Enable Request Body Logging | `enable_request_body_logging` | false | ✅ | Whether to log complete request body content in request logs |
+| Enable MCP Server | `mcp_enabled` | false | ✅ | Whether to enable MCP server endpoint for this Tavily group |
 
 **Request Settings:**
 
@@ -578,6 +583,158 @@ response = client.messages.create(
 > **Important Note**: As a transparent proxy service, GPT-Load completely preserves the native API formats and authentication methods of various AI services. You only need to replace the endpoint address and use the **Proxy Key** configured in the management interface for seamless migration.
 
 </details>
+
+## MCP (Model Context Protocol) Integration
+
+GPT-Load provides a built-in MCP server for Tavily search integration, enabling AI tools like Claude Desktop and Cursor to access real-time search capabilities through the Model Context Protocol.
+
+### Features
+
+- **Search Tools**: `tavily_search`, `tavily_extract`, `tavily_crawl`, `tavily_map`
+- **Response Caching**: Automatic caching of identical requests to reduce API calls and costs
+- **Quota Tracking**: Real-time monitoring of API usage with automatic monthly resets
+- **Request Logging**: All MCP requests are logged in the web interface for monitoring and debugging
+- **Authentication**: Uses group-level proxy keys for secure access control
+- **Load Balancing**: Automatic rotation across multiple Tavily API keys with failover
+
+### Quick Setup
+
+1. **Create a Tavily Group in GPT-Load**
+   - Open web interface at `http://localhost:3001`
+   - Navigate to Keys → Add Group
+   - Select "Tavily" as channel type
+   - Add your Tavily API keys
+   - Configure group-level proxy keys for authentication
+   - Enable "MCP Server" in group settings
+
+2. **Configure Your AI Tool**
+
+   For **Claude Desktop** (`~/Library/Application Support/Claude/claude_desktop_config.json`):
+   ```json
+   {
+     "mcpServers": {
+       "tavily": {
+         "url": "http://localhost:3001/mcp/your-tavily-group-name",
+         "headers": {
+           "Authorization": "Bearer your-proxy-key"
+         }
+       }
+     }
+   }
+   ```
+
+   For **Cursor** (Settings → Features → MCP Servers):
+   ```json
+   {
+     "tavily": {
+       "url": "http://localhost:3001/mcp/your-tavily-group-name",
+       "headers": {
+         "Authorization": "Bearer your-proxy-key"
+       }
+     }
+   }
+   ```
+
+3. **Restart Your AI Tool** to load the MCP server
+
+### Available Tools
+
+#### tavily_search
+Perform web searches with advanced filtering options.
+
+**Parameters:**
+- `query` (required): Search query string
+- `search_depth` (optional): "basic" or "advanced" search depth
+- `max_results` (optional): Maximum number of results (1-20)
+- `include_images` (optional): Include image results
+- `include_answer` (optional): Generate AI answer from results
+- `include_raw_content` (optional): Include raw HTML content
+- `include_domains` (optional): Only search these domains
+- `exclude_domains` (optional): Exclude these domains
+- `country` (optional): Country code for localized results (e.g., "us", "cn")
+
+#### tavily_extract
+Extract clean, formatted content from web pages.
+
+**Parameters:**
+- `urls` (required): Array of URLs to extract content from
+
+#### tavily_crawl
+Deep crawl websites with customizable depth.
+
+**Parameters:**
+- `url` (required): Starting URL to crawl
+- `max_depth` (optional): Maximum crawl depth (1-5)
+- `max_pages` (optional): Maximum pages to crawl (1-100)
+
+#### tavily_map
+Generate comprehensive sitemaps of websites.
+
+**Parameters:**
+- `url` (required): Website URL to map
+- `search` (optional): Filter results by search term
+- `max_results` (optional): Maximum sitemap entries
+
+### Authentication Methods
+
+The MCP endpoint supports three authentication methods:
+
+1. **Authorization Header** (Recommended):
+   ```json
+   "headers": {
+     "Authorization": "Bearer your-proxy-key"
+   }
+   ```
+
+2. **X-Api-Key Header**:
+   ```json
+   "headers": {
+     "X-Api-Key": "your-proxy-key"
+   }
+   ```
+
+3. **Query Parameter**:
+   ```
+   http://localhost:3001/mcp/your-group?key=your-proxy-key
+   ```
+
+### Monitoring and Logs
+
+- **Request Logs**: View all MCP requests in the web interface under Logs
+- **Key Status**: Monitor API key usage, quota, and health in Keys management
+- **Caching**: Cache hit rate is shown in key statistics
+- **Quota Tracking**: Real-time usage tracking with automatic monthly resets
+
+### Advanced Configuration
+
+Enable these settings in your Tavily group configuration:
+
+| Setting | Description |
+|---------|-------------|
+| **MCP Enabled** | Enable/disable MCP server endpoint for this group |
+| **Enable Request Body Logging** | Log full request/response bodies for debugging |
+| **Max Retries** | Number of failover attempts across different keys |
+| **Blacklist Threshold** | Failed attempts before marking a key as invalid |
+
+### Troubleshooting
+
+**MCP tools not showing in AI tool:**
+- Verify MCP is enabled in group settings
+- Check authentication credentials
+- Restart your AI tool after configuration changes
+- Check GPT-Load logs for connection errors
+
+**Authentication errors:**
+- Ensure proxy key is configured in group settings
+- Verify the correct group name in MCP URL
+- Check Authorization header format
+
+**Rate limiting:**
+- Monitor key quota in web interface
+- Add more Tavily API keys to the group for load balancing
+- Enable response caching to reduce API calls
+
+For more details, see [Tavily API Documentation](https://docs.tavily.com/) and [MCP Specification](https://modelcontextprotocol.io/).
 
 ## Related Projects
 
