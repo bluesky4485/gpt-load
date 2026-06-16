@@ -1,23 +1,14 @@
-name: Build Docker Image
+name: Build Docker Image (Dev)
 
 on:
   push:
-    tags:
-      - "*"
-  workflow_dispatch:
-    inputs:
-      version:
-        description: 'Version tag (e.g., 1.4.8)'
-        required: true
-        type: string
-      push_to_registry:
-        description: 'Push to registry'
-        required: true
-        type: boolean
-        default: true
+    branches:
+      - main
+      - develop
+
 jobs:
   build_docker_image:
-    name: Build Docker Image
+    name: Build Docker Image (Dev)
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
@@ -35,12 +26,6 @@ jobs:
         with:
           platforms: arm64
 
-      - name: Log in to Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
       - name: Log in to Container Registry
         uses: docker/login-action@v3
         with:
@@ -53,25 +38,21 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: |
-            tbphp/gpt-load
             ghcr.io/${{ github.repository }}
-          flavor: |
-            latest=false
           tags: |
-            type=ref,event=tag
-            type=raw,value=beta,enable=${{ contains(github.ref, '-beta') }}
-            type=raw,value=latest,enable=${{ !contains(github.ref, '-') }}
+            type=ref,event=branch
+            type=sha,prefix={{branch}}-
+            type=raw,value=dev,enable={{is_default_branch}}
 
       - name: Build and push Docker image
-        id: build
         uses: docker/build-push-action@v5
         with:
           context: .
           platforms: linux/amd64,linux/arm64
-          push: ${{ github.event_name == 'push' || inputs.push_to_registry }}
+          push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           build-args: |
-            VERSION=${{ inputs.version || github.ref_name }}
+            VERSION=${{ github.sha }}
