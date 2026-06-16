@@ -117,10 +117,14 @@ git push origin main
 
 **获取 Docker Hub Token：**
 1. 登录 [Docker Hub](https://hub.docker.com/)
-2. **Account Settings → Security → New Access Token**
-3. Description: `GitHub Actions`
-4. Access permissions: `Read, Write, Delete`
-5. **Generate → 复制 token（仅显示一次）**
+2. 点击右上角头像 → **My Account**
+3. 左侧菜单 → **Security** 或 **Personal access tokens**
+4. 点击 **New Access Token** 或 **Generate New Token**
+5. 填写 Token 信息：
+   - **Description**: `GitHub Actions`
+   - **Access permissions**: `Read, Write, Delete`（或 `Read & Write`）
+6. 点击 **Generate**
+7. **立即复制 token**（仅显示一次，关闭后无法再查看）
 
 ### 2. 启用 GitHub Container Registry
 
