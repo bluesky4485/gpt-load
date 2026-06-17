@@ -19,10 +19,8 @@
 
 **构建产物：**
 ```
-docker.io/tbphp/gpt-load:1.4.8
-docker.io/tbphp/gpt-load:latest
-ghcr.io/tbphp/gpt-load:1.4.8
-ghcr.io/tbphp/gpt-load:latest
+docker.io/kolehank/gpt-load:1.4.8
+docker.io/kolehank/gpt-load:latest
 ```
 
 ### 2. 开发分支构建 (`.github/workflows/docker-build-dev.yml`)
@@ -37,9 +35,9 @@ ghcr.io/tbphp/gpt-load:latest
 
 **构建产物：**
 ```
-ghcr.io/tbphp/gpt-load:main
-ghcr.io/tbphp/gpt-load:main-abc1234
-ghcr.io/tbphp/gpt-load:dev
+ghcr.io/kolehank/gpt-load:main
+ghcr.io/kolehank/gpt-load:main-abc1234
+ghcr.io/kolehank/gpt-load:dev
 ```
 
 ## 🚀 使用方法
@@ -99,7 +97,7 @@ git add .
 git commit -m "feat: add new feature"
 git push origin main
 
-# ✅ 自动构建测试镜像 ghcr.io/tbphp/gpt-load:main
+# ✅ 自动构建测试镜像 ghcr.io/kolehank/gpt-load:main
 ```
 
 ## 🔧 初次配置（仅需一次）
@@ -229,7 +227,7 @@ ERROR: failed to solve: failed to prepare xxxxxxx: not found
 
 ```yaml
 - name: Sign the image with sigstore
-  run: cosign sign --yes docker.io/tbphp/gpt-load:${{ github.ref_name }}
+  run: cosign sign --yes docker.io/kolehank/gpt-load:${{ github.ref_name }}
 ```
 
 ### 3. 漏洞扫描
@@ -240,7 +238,7 @@ ERROR: failed to solve: failed to prepare xxxxxxx: not found
 - name: Run Trivy vulnerability scanner
   uses: aquasecurity/trivy-action@master
   with:
-    image-ref: 'docker.io/tbphp/gpt-load:${{ github.ref_name }}'
+    image-ref: 'docker.io/kolehank/gpt-load:${{ github.ref_name }}'
     format: 'sarif'
     output: 'trivy-results.sarif'
 ```
@@ -310,8 +308,8 @@ strategy:
 
 8. ✅ 验证镜像
    ```bash
-   docker pull tbphp/gpt-load:1.4.8
-   docker run --rm tbphp/gpt-load:1.4.8
+   docker pull kolehank/gpt-load:1.4.8
+   docker run --rm kolehank/gpt-load:1.4.8
    ```
 
 9. ✅ 更新文档
