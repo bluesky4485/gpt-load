@@ -22,6 +22,7 @@ func init() {
 
 // TavilyChannel implements ChannelProxy for the Tavily search API.
 // Tavily uses Bearer token authentication and does not support streaming.
+// It also implements CacheableChannel and QuotaAwareChannel.
 type TavilyChannel struct {
 	*BaseChannel
 }
@@ -132,4 +133,34 @@ func (ch *TavilyChannel) ValidateKey(ctx context.Context, apiKey *models.APIKey,
 	parsedError := app_errors.ParseUpstreamError(errorBody)
 
 	return false, fmt.Errorf("[status %d] %s", resp.StatusCode, parsedError)
+}
+
+// --- CacheableChannel implementation ---
+
+// IsCacheable returns true — Tavily search results benefit from caching to save quota.
+func (ch *TavilyChannel) IsCacheable() bool {
+	return true
+}
+
+// CacheTTL returns 7 days in seconds — search results have moderate temporal value.
+func (ch *TavilyChannel) CacheTTL() int {
+	return 7 * 24 * 60 * 60 // 7 days
+}
+
+// --- QuotaAwareChannel implementation ---
+
+// GetQuotaConfig returns the quota configuration for Tavily: monthly reset, usage sync available,
+// exhaustion detected via HTTP status codes 432/433.
+func (ch *TavilyChannel) GetQuotaConfig() QuotaConfig {
+	return QuotaConfig{
+		Cycle:              QuotaCycleMonthly,
+		SyncAvailable:      true,
+		ExhaustionDetectBy: "status_code",
+	}
+}
+
+// IsQuotaExhausted checks if the HTTP status code indicates quota exhaustion.
+// Tavily returns 432 (key limit reached) or 433 (account limit reached).
+func (ch *TavilyChannel) IsQuotaExhausted(statusCode int, body []byte) bool {
+	return statusCode == 432 || statusCode == 433
 }

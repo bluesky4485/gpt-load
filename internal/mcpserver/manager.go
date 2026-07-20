@@ -6,12 +6,13 @@ import (
 	"net/http"
 	"sync"
 
+	"gpt-load/internal/channel"
 	"gpt-load/internal/models"
 	"gpt-load/internal/proxy"
 	"gpt-load/internal/services"
 
-	mcpserver "github.com/mark3labs/mcp-go/server"
 	"github.com/gin-gonic/gin"
+	mcpserver "github.com/mark3labs/mcp-go/server"
 	"github.com/sirupsen/logrus"
 )
 
@@ -21,8 +22,8 @@ type contextKey string
 // ginContextKey is the context key for the gin.Context, passed through MCP tool handlers.
 const ginContextKey contextKey = "gin-context"
 
-// Manager manages per-group MCP servers for Tavily tool access.
-// Each MCP-enabled group gets its own MCPServer with Tavily-specific tools.
+// Manager manages per-group MCP servers for tool access.
+// Each MCP-enabled group gets its own MCPServer with channel-specific tools.
 type Manager struct {
 	proxyServer  *proxy.ProxyServer
 	groupManager *services.GroupManager
@@ -62,13 +63,18 @@ func (m *Manager) Handler(c *gin.Context) {
 		return
 	}
 
-	if group.ChannelType != "tavily" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "MCP is only supported for Tavily groups"})
+	// MCP is supported for any channel that implements CacheableChannel (tavily, fengniao, etc.)
+	ch, err := m.proxyServer.GetChannelFactory().GetChannel(group)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("failed to get channel for group '%s': %v", groupName, err)})
+		return
+	}
+	if !channel.IsCacheable(ch) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "MCP is only supported for cacheable channel groups (tavily, fengniao)"})
 		return
 	}
 
 	srv := m.getOrCreateServer(group)
-	// Embed gin context into request context so MCP tool handlers can access it for logging.
 	reqWithCtx := c.Request.WithContext(context.WithValue(c.Request.Context(), ginContextKey, c))
 	srv.ServeHTTP(c.Writer, reqWithCtx)
 }
@@ -85,7 +91,6 @@ func (m *Manager) getOrCreateServer(group *models.Group) *mcpserver.StreamableHT
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	// Double-check after acquiring write lock.
 	if srv, ok = m.servers[group.Name]; ok {
 		return srv
 	}
@@ -94,13 +99,14 @@ func (m *Manager) getOrCreateServer(group *models.Group) *mcpserver.StreamableHT
 	m.servers[group.Name] = srv
 
 	logrus.WithFields(logrus.Fields{
-		"group": group.Name,
+		"group":        group.Name,
+		"channel_type": group.ChannelType,
 	}).Info("MCP server created for group")
 
 	return srv
 }
 
-// buildServer creates a new StreamableHTTPServer for a group with Tavily tools.
+// buildServer creates a new StreamableHTTPServer for a group with channel-specific tools.
 func (m *Manager) buildServer(group *models.Group) *mcpserver.StreamableHTTPServer {
 	serverName := fmt.Sprintf("gpt-load-%s", group.Name)
 
@@ -112,11 +118,18 @@ func (m *Manager) buildServer(group *models.Group) *mcpserver.StreamableHTTPServ
 		mcpserver.WithRecovery(),
 	)
 
-	// Register all Tavily API tools.
-	m.registerSearchTool(mcpSrv, group)
-	m.registerExtractTool(mcpSrv, group)
-	m.registerCrawlTool(mcpSrv, group)
-	m.registerMapTool(mcpSrv, group)
+	// Register tools based on channel type
+	switch group.ChannelType {
+	case "tavily":
+		m.registerSearchTool(mcpSrv, group)
+		m.registerExtractTool(mcpSrv, group)
+		m.registerCrawlTool(mcpSrv, group)
+		m.registerMapTool(mcpSrv, group)
+	case "fengniao":
+		m.registerFengniaoTools(mcpSrv, group)
+	default:
+		logrus.WithField("channel_type", group.ChannelType).Warn("No MCP tools registered for channel type")
+	}
 
 	return mcpserver.NewStreamableHTTPServer(mcpSrv,
 		mcpserver.WithEndpointPath("/mcp/"+group.Name),
@@ -125,9 +138,7 @@ func (m *Manager) buildServer(group *models.Group) *mcpserver.StreamableHTTPServ
 
 // executeProxyTool sends a tool request through the proxy pipeline, reusing key management,
 // retry/failover, auth injection, quota tracking, and caching.
-// This is the bridge between MCP tool handlers and the proxy core.
 func (m *Manager) executeProxyTool(ctx context.Context, group *models.Group, endpoint string, body []byte) ([]byte, int, error) {
-	// Extract gin context from MCP tool handler context for request logging.
 	var ginCtx *gin.Context
 	if v, ok := ctx.Value(ginContextKey).(*gin.Context); ok {
 		ginCtx = v
@@ -137,7 +148,7 @@ func (m *Manager) executeProxyTool(ctx context.Context, group *models.Group, end
 		Group:      group,
 		Endpoint:   endpoint,
 		Body:       body,
-		GinContext:  ginCtx,
+		GinContext: ginCtx,
 	})
 	if err != nil {
 		if resp != nil {

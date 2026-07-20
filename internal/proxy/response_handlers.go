@@ -64,7 +64,7 @@ func (ps *ProxyServer) handleCacheableResponse(c *gin.Context, resp *http.Respon
 	// Cache the response.
 	endpoint := extractEndpoint(c.Request.URL.Path)
 	if cacheKey, err := models.GenerateCacheKey(endpoint, requestBody); err == nil {
-		if putErr := ps.cacheService.Put(cacheKey, group.ID, endpoint, string(body), resp.StatusCode); putErr != nil {
+		if putErr := ps.cacheService.Put(cacheKey, group.ID, endpoint, string(body), resp.StatusCode, ps.cacheService.GetTTLForGroup(group.ID)); putErr != nil {
 			logrus.WithFields(logrus.Fields{
 				"group":    group.Name,
 				"endpoint": endpoint,

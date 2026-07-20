@@ -380,7 +380,7 @@ export default {
     mcpEnabled: "MCP Enabled",
     mcpDisabled: "MCP Disabled",
     mcpEnabledTooltip:
-      "Enable Model Context Protocol (MCP) endpoint for this Tavily group. When enabled, clients can access Tavily tools via /mcp/{group_name}",
+      "Enable Model Context Protocol (MCP) endpoint for this group. When enabled, clients can access tools (Tavily search, Fengniao company query, etc.) via /mcp/{group_name}",
     quotaUsage: "Quota Usage",
     quotaUsageTip: "Total used / total quota across all tracked keys",
     exhaustedKeys: "Exhausted Keys",

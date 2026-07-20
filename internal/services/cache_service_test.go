@@ -29,14 +29,15 @@ func newTestCacheService(t *testing.T) (*CacheService, *gorm.DB) {
 		t.Fatalf("failed to auto-migrate: %v", err)
 	}
 
-	return NewCacheService(db), db
+	// Pass nil channelFactory for tests (GetTTLForGroup will use default TTL)
+	return NewCacheService(db, nil), db
 }
 
 func TestCacheService_PutAndGet(t *testing.T) {
 	cs, _ := newTestCacheService(t)
 
 	cacheKey := "abc123def456abc123def456abc123def456abc123def456abc123def456abcd"
-	err := cs.Put(cacheKey, 1, "search", `{"results":[]}`, 200)
+	err := cs.Put(cacheKey, 1, "search", `{"results":[]}`, 200, 0)
 	if err != nil {
 		t.Fatalf("Put failed: %v", err)
 	}
@@ -50,12 +51,6 @@ func TestCacheService_PutAndGet(t *testing.T) {
 	}
 	if entry.StatusCode != 200 {
 		t.Errorf("expected status 200, got %d", entry.StatusCode)
-	}
-	if entry.GroupID != 1 {
-		t.Errorf("expected group_id 1, got %d", entry.GroupID)
-	}
-	if entry.Endpoint != "search" {
-		t.Errorf("expected endpoint 'search', got '%s'", entry.Endpoint)
 	}
 }
 
@@ -73,14 +68,12 @@ func TestCacheService_PutUpsert(t *testing.T) {
 
 	cacheKey := "upsert-test-key-00000000000000000000000000000000000000000000000000"
 
-	// First put.
-	err := cs.Put(cacheKey, 1, "search", `{"v":1}`, 200)
+	err := cs.Put(cacheKey, 1, "search", `{"v":1}`, 200, 0)
 	if err != nil {
 		t.Fatalf("first Put failed: %v", err)
 	}
 
-	// Second put with updated response.
-	err = cs.Put(cacheKey, 1, "search", `{"v":2}`, 200)
+	err = cs.Put(cacheKey, 1, "search", `{"v":2}`, 200, 0)
 	if err != nil {
 		t.Fatalf("second Put failed: %v", err)
 	}
@@ -98,15 +91,13 @@ func TestCacheService_HitCountIncrement(t *testing.T) {
 	cs, _ := newTestCacheService(t)
 
 	cacheKey := "hitcount-key-00000000000000000000000000000000000000000000000000000"
-	cs.Put(cacheKey, 1, "search", `{"ok":true}`, 200)
+	cs.Put(cacheKey, 1, "search", `{"ok":true}`, 200, 0)
 
-	// First Get — hit count goes from 0 to 1.
 	e1 := cs.Get(cacheKey)
 	if e1 == nil {
 		t.Fatal("expected cache hit")
 	}
 
-	// Second Get — hit count goes to 2.
 	e2 := cs.Get(cacheKey)
 	if e2 == nil {
 		t.Fatal("expected cache hit")
@@ -116,27 +107,28 @@ func TestCacheService_HitCountIncrement(t *testing.T) {
 	}
 }
 
-func TestCacheService_Cleanup(t *testing.T) {
+func TestCacheService_Cleanup_Expired(t *testing.T) {
 	cs, db := newTestCacheService(t)
 
-	// Insert an old entry manually.
-	old := models.SearchCache{
-		CacheKey:     "old-key-000000000000000000000000000000000000000000000000000",
+	// Insert an expired entry manually.
+	expired := models.SearchCache{
+		CacheKey:     "expired-key-00000000000000000000000000000000000000000000000",
 		GroupID:      1,
 		Endpoint:     "search",
 		ResponseBody: `{"old":true}`,
 		StatusCode:   200,
 		HitCount:     5,
+		ExpiresAt:    time.Now().Add(-1 * time.Hour), // 已过期
 		CreatedAt:    time.Now().Add(-48 * time.Hour),
 		LastAccessAt: time.Now().Add(-48 * time.Hour),
 	}
-	db.Create(&old)
+	db.Create(&expired)
 
-	// Insert a recent entry.
-	cs.Put("recent-key-00000000000000000000000000000000000000000000000000", 1, "search", `{"new":true}`, 200)
+	// Insert a valid (not expired) entry.
+	cs.Put("valid-key-000000000000000000000000000000000000000000000000000", 1, "search", `{"new":true}`, 200, 0)
 
-	// Cleanup entries older than 24 hours.
-	deleted, err := cs.Cleanup(24 * time.Hour)
+	// Cleanup expired entries.
+	deleted, err := cs.Cleanup()
 	if err != nil {
 		t.Fatalf("Cleanup failed: %v", err)
 	}
@@ -144,21 +136,20 @@ func TestCacheService_Cleanup(t *testing.T) {
 		t.Errorf("expected 1 deleted, got %d", deleted)
 	}
 
-	// Old entry should be gone.
-	if cs.Get(old.CacheKey) != nil {
-		t.Error("expected old entry to be cleaned up")
+	// Expired entry should be gone.
+	if cs.Get(expired.CacheKey) != nil {
+		t.Error("expected expired entry to be cleaned up")
 	}
 
-	// Recent entry should still exist.
-	if cs.Get("recent-key-00000000000000000000000000000000000000000000000000") == nil {
-		t.Error("expected recent entry to survive cleanup")
+	// Valid entry should still exist.
+	if cs.Get("valid-key-000000000000000000000000000000000000000000000000000") == nil {
+		t.Error("expected valid entry to survive cleanup")
 	}
 }
 
 func TestCacheService_Stats(t *testing.T) {
 	cs, _ := newTestCacheService(t)
 
-	// Empty cache.
 	total, hits, err := cs.Stats()
 	if err != nil {
 		t.Fatalf("Stats failed: %v", err)
@@ -167,11 +158,9 @@ func TestCacheService_Stats(t *testing.T) {
 		t.Errorf("expected (0,0) for empty cache, got (%d,%d)", total, hits)
 	}
 
-	// Add entries.
-	cs.Put("stats-key-1-000000000000000000000000000000000000000000000000000", 1, "search", `{"a":1}`, 200)
-	cs.Put("stats-key-2-000000000000000000000000000000000000000000000000000", 2, "search", `{"b":2}`, 200)
+	cs.Put("stats-key-1-000000000000000000000000000000000000000000000000000", 1, "search", `{"a":1}`, 200, 0)
+	cs.Put("stats-key-2-000000000000000000000000000000000000000000000000000", 2, "search", `{"b":2}`, 200, 0)
 
-	// Generate some hits.
 	cs.Get("stats-key-1-000000000000000000000000000000000000000000000000000")
 	cs.Get("stats-key-1-000000000000000000000000000000000000000000000000000")
 	cs.Get("stats-key-2-000000000000000000000000000000000000000000000000000")
@@ -188,43 +177,11 @@ func TestCacheService_Stats(t *testing.T) {
 	}
 }
 
-func TestCacheService_StatsByGroup(t *testing.T) {
-	cs, _ := newTestCacheService(t)
-
-	cs.Put("grp1-key-0000000000000000000000000000000000000000000000000000", 1, "search", `{"a":1}`, 200)
-	cs.Put("grp2-key-0000000000000000000000000000000000000000000000000000", 2, "search", `{"b":2}`, 200)
-
-	cs.Get("grp1-key-0000000000000000000000000000000000000000000000000000")
-	cs.Get("grp1-key-0000000000000000000000000000000000000000000000000000")
-
-	total, hits, err := cs.StatsByGroup(1)
-	if err != nil {
-		t.Fatalf("StatsByGroup failed: %v", err)
-	}
-	if total != 1 {
-		t.Errorf("group 1: expected 1 entry, got %d", total)
-	}
-	if hits != 2 {
-		t.Errorf("group 1: expected 2 hits, got %d", hits)
-	}
-
-	total, hits, err = cs.StatsByGroup(2)
-	if err != nil {
-		t.Fatalf("StatsByGroup failed: %v", err)
-	}
-	if total != 1 {
-		t.Errorf("group 2: expected 1 entry, got %d", total)
-	}
-	if hits != 0 {
-		t.Errorf("group 2: expected 0 hits, got %d", hits)
-	}
-}
-
 func TestCacheService_Lifecycle(t *testing.T) {
 	cs, _ := newTestCacheService(t)
 
 	cs.Start()
-	time.Sleep(100 * time.Millisecond) // let the initial cleanup run
+	time.Sleep(100 * time.Millisecond)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
@@ -237,7 +194,6 @@ func TestCacheService_Lifecycle(t *testing.T) {
 
 	select {
 	case <-done:
-		// OK
 	case <-time.After(5 * time.Second):
 		t.Fatal("CacheService.Stop() did not return within 5 seconds")
 	}

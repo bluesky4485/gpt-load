@@ -10,17 +10,18 @@ import (
 	"time"
 )
 
-// SearchCache stores cached Tavily search responses.
+// SearchCache stores cached search/data API responses.
 // Cache key is SHA-256 of sorted canonical request fields.
 // Cache hits skip key selection and quota consumption entirely — saving both keys and quota.
 type SearchCache struct {
 	ID           uint      `gorm:"primaryKey;autoIncrement" json:"id"`
 	CacheKey     string    `gorm:"type:varchar(64);uniqueIndex;not null" json:"cache_key"` // SHA-256 hex
 	GroupID      uint      `gorm:"not null;index" json:"group_id"`
-	Endpoint     string    `gorm:"type:varchar(50);not null" json:"endpoint"` // e.g., "search", "extract"
+	Endpoint     string    `gorm:"type:varchar(50);not null" json:"endpoint"` // e.g., "search", "extract", "searchHint"
 	ResponseBody string    `gorm:"type:text;not null" json:"response_body"`   // cached HTTP response body
 	StatusCode   int       `gorm:"not null;default:200" json:"status_code"`   // cached HTTP status code
 	HitCount     int64     `gorm:"not null;default:0" json:"hit_count"`
+	ExpiresAt    time.Time `gorm:"not null;index" json:"expires_at"` // 过期时间，用于定时清理
 	CreatedAt    time.Time `json:"created_at"`
 	LastAccessAt time.Time `json:"last_access_at"`
 	UpdatedAt    time.Time `json:"updated_at"`

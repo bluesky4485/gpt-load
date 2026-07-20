@@ -67,7 +67,7 @@ interface GroupFormData {
   display_name: string;
   description: string;
   upstreams: UpstreamInfo[];
-  channel_type: "anthropic" | "gemini" | "openai" | "openai-response" | "tavily";
+  channel_type: "anthropic" | "gemini" | "openai" | "openai-response" | "tavily" | "fengniao";
   sort: number;
   test_model: string;
   validation_endpoint: string;
@@ -131,6 +131,8 @@ const testModelPlaceholder = computed(() => {
       return "claude-3-haiku-20240307";
     case "tavily":
       return "tavily";
+    case "fengniao":
+      return "fengniao";
     default:
       return t("keys.enterModelName");
   }
@@ -147,6 +149,8 @@ const upstreamPlaceholder = computed(() => {
       return "https://api.anthropic.com";
     case "tavily":
       return "https://api.tavily.com";
+    case "fengniao":
+      return "https://m.riskbird.com/prod-qbb-api";
     default:
       return t("keys.enterUpstreamUrl");
   }
@@ -266,6 +270,8 @@ function getOldDefaultTestModel(channelType: string): string {
       return "claude-3-haiku-20240307";
     case "tavily":
       return "tavily";
+    case "fengniao":
+      return "fengniao";
     default:
       return "";
   }
@@ -282,6 +288,8 @@ function getOldDefaultUpstream(channelType: string): string {
       return "https://api.anthropic.com";
     case "tavily":
       return "https://api.tavily.com";
+    case "fengniao":
+      return "https://m.riskbird.com/prod-qbb-api";
     default:
       return "";
   }
@@ -553,7 +561,7 @@ async function handleSubmit() {
           action: rule.action,
         })),
       proxy_keys: formData.proxy_keys,
-      mcp_enabled: formData.channel_type === "tavily" ? formData.mcp_enabled : false,
+      mcp_enabled: (formData.channel_type === "tavily" || formData.channel_type === "fengniao") ? formData.mcp_enabled : false,
     };
 
     let res: Group;
@@ -765,8 +773,8 @@ async function handleSubmit() {
             />
           </n-form-item>
 
-          <!-- MCP开关：仅Tavily渠道显示 -->
-          <n-form-item v-if="formData.channel_type === 'tavily'" path="mcp_enabled">
+          <!-- MCP开关：仅Tavily/Fengniao渠道显示 -->
+          <n-form-item v-if="formData.channel_type === 'tavily' || formData.channel_type === 'fengniao'" path="mcp_enabled">
             <template #label>
               <div class="form-label-with-tooltip">
                 {{ t("keys.mcpEnabled") }}

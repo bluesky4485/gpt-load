@@ -122,7 +122,7 @@ const mcpLoading = ref(false);
 
 // 判断是否为Tavily分组
 const isTavilyGroup = computed(() => {
-  return props.group?.channel_type === "tavily";
+  return props.group?.channel_type === "tavily" || props.group?.channel_type === "fengniao";
 });
 
 // 额度使用率颜色类型

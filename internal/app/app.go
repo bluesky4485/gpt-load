@@ -98,6 +98,11 @@ func (a *App) Start() error {
 
 		// 数据库迁移
 		db.HandleLegacyIndexes(a.db)
+		// Run custom migrations first (e.g., adding columns with defaults) before AutoMigrate
+		// so that AutoMigrate finds the columns already present and doesn't fail on NOT NULL constraints.
+		if err := db.MigrateDatabase(a.db); err != nil {
+			return fmt.Errorf("database data migration failed: %w", err)
+		}
 		if err := a.db.AutoMigrate(
 			&models.SystemSetting{},
 			&models.Group{},
@@ -108,10 +113,6 @@ func (a *App) Start() error {
 			&models.SearchCache{},
 		); err != nil {
 			return fmt.Errorf("database auto-migration failed: %w", err)
-		}
-		// 数据修复
-		if err := db.MigrateDatabase(a.db); err != nil {
-			return fmt.Errorf("database data migration failed: %w", err)
 		}
 		logrus.Info("Database auto-migration completed.")
 

@@ -187,6 +187,8 @@ func GetValidationEndpoint(group *models.Group) string {
 		return "/v1/messages"
 	case "tavily":
 		return "/search"
+	case "fengniao":
+		return "/skills/searchHint?key=test"
 	default:
 		return ""
 	}

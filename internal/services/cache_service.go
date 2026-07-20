@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"fmt"
+	"gpt-load/internal/channel"
 	"gpt-load/internal/models"
 	"sync"
 	"sync/atomic"
@@ -15,34 +16,36 @@ import (
 
 // Cache cleanup configuration.
 const (
-	cacheCleanupInterval = 1 * time.Hour   // how often to run cleanup
-	cacheMaxAge          = 7 * 24 * time.Hour // entries not accessed in 7 days are removed
+	cacheCleanupInterval = 1 * time.Hour      // how often to run cleanup
+	cacheDefaultTTL      = 7 * 24 * time.Hour // default TTL for channels without explicit CacheTTL
 )
 
-// CacheService manages Tavily search response caching.
+// CacheService manages search/data API response caching.
 // Cache hits skip key selection and quota consumption entirely.
 type CacheService struct {
-	db       *gorm.DB
-	stopChan chan struct{}
-	wg       sync.WaitGroup
-	running  atomic.Bool
+	db             *gorm.DB
+	channelFactory *channel.Factory
+	stopChan       chan struct{}
+	wg             sync.WaitGroup
+	running        atomic.Bool
 }
 
 // NewCacheService creates a new CacheService.
-func NewCacheService(db *gorm.DB) *CacheService {
+func NewCacheService(db *gorm.DB, channelFactory *channel.Factory) *CacheService {
 	return &CacheService{
-		db:       db,
-		stopChan: make(chan struct{}),
+		db:             db,
+		channelFactory: channelFactory,
+		stopChan:       make(chan struct{}),
 	}
 }
 
 // Get looks up a cached response by its SHA-256 cache key.
 // On hit, atomically increments HitCount and updates LastAccessAt.
-// Returns nil if no cache entry is found.
+// Returns nil if no cache entry is found or the entry has expired.
 func (cs *CacheService) Get(cacheKey string) *models.SearchCache {
 	var entry models.SearchCache
-	if err := cs.db.Where("cache_key = ?", cacheKey).First(&entry).Error; err != nil {
-		return nil // cache miss
+	if err := cs.db.Where("cache_key = ? AND expires_at > ?", cacheKey, time.Now()).First(&entry).Error; err != nil {
+		return nil // cache miss or expired
 	}
 
 	now := time.Now()
@@ -58,14 +61,22 @@ func (cs *CacheService) Get(cacheKey string) *models.SearchCache {
 }
 
 // Put stores or updates a cached response. Uses UPSERT on the unique cache_key index.
-func (cs *CacheService) Put(cacheKey string, groupID uint, endpoint string, responseBody string, statusCode int) error {
+// ttlSeconds determines the cache expiration time. If 0, the system default is used.
+func (cs *CacheService) Put(cacheKey string, groupID uint, endpoint string, responseBody string, statusCode int, ttlSeconds int) error {
+	if ttlSeconds <= 0 {
+		ttlSeconds = int(cacheDefaultTTL.Seconds())
+	}
+
 	now := time.Now()
+	expiresAt := now.Add(time.Duration(ttlSeconds) * time.Second)
+
 	entry := models.SearchCache{
 		CacheKey:     cacheKey,
 		GroupID:      groupID,
 		Endpoint:     endpoint,
 		ResponseBody: responseBody,
 		StatusCode:   statusCode,
+		ExpiresAt:    expiresAt,
 		HitCount:     0,
 		CreatedAt:    now,
 		LastAccessAt: now,
@@ -73,7 +84,7 @@ func (cs *CacheService) Put(cacheKey string, groupID uint, endpoint string, resp
 
 	result := cs.db.Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "cache_key"}},
-		DoUpdates: clause.AssignmentColumns([]string{"response_body", "status_code", "last_access_at", "updated_at"}),
+		DoUpdates: clause.AssignmentColumns([]string{"response_body", "status_code", "expires_at", "last_access_at", "updated_at"}),
 	}).Create(&entry)
 
 	if result.Error != nil {
@@ -82,16 +93,35 @@ func (cs *CacheService) Put(cacheKey string, groupID uint, endpoint string, resp
 	return nil
 }
 
-// Cleanup removes cache entries whose LastAccessAt is older than maxAge.
+// GetTTLForGroup returns the cache TTL in seconds for a group based on its channel type.
+func (cs *CacheService) GetTTLForGroup(groupID uint) int {
+	var group models.Group
+	if err := cs.db.First(&group, groupID).Error; err != nil {
+		return int(cacheDefaultTTL.Seconds())
+	}
+
+	ch, err := cs.channelFactory.GetChannel(&group)
+	if err != nil {
+		return int(cacheDefaultTTL.Seconds())
+	}
+
+	ttl := channel.GetCacheTTL(ch)
+	if ttl > 0 {
+		return ttl
+	}
+	return int(cacheDefaultTTL.Seconds())
+}
+
+// Cleanup removes cache entries whose expires_at is in the past.
 // Returns the number of deleted entries.
-func (cs *CacheService) Cleanup(maxAge time.Duration) (int64, error) {
-	cutoff := time.Now().Add(-maxAge)
-	result := cs.db.Where("last_access_at < ?", cutoff).Delete(&models.SearchCache{})
+func (cs *CacheService) Cleanup() (int64, error) {
+	now := time.Now()
+	result := cs.db.Where("expires_at < ?", now).Delete(&models.SearchCache{})
 	if result.Error != nil {
 		return 0, fmt.Errorf("failed to cleanup cache: %w", result.Error)
 	}
 	if result.RowsAffected > 0 {
-		logrus.WithField("deleted", result.RowsAffected).Info("CacheService: Cleaned up stale cache entries")
+		logrus.WithField("deleted", result.RowsAffected).Info("CacheService: Cleaned up expired cache entries")
 	}
 	return result.RowsAffected, nil
 }
@@ -138,7 +168,7 @@ func (cs *CacheService) Start() {
 	go cs.cleanupLoop()
 }
 
-// Stop gracefully shuts down the background cleanup goroutine.
+// Stop gracefully shuts down the background cache cleanup goroutine.
 func (cs *CacheService) Stop(ctx context.Context) {
 	close(cs.stopChan)
 
@@ -156,13 +186,13 @@ func (cs *CacheService) Stop(ctx context.Context) {
 	}
 }
 
-// cleanupLoop periodically removes stale cache entries.
+// cleanupLoop periodically removes expired cache entries.
 func (cs *CacheService) cleanupLoop() {
 	defer cs.wg.Done()
 
 	// Run immediately on startup.
 	if !cs.running.Swap(true) {
-		cs.runCleanup()
+		cs.Cleanup()
 		cs.running.Store(false)
 	}
 
@@ -176,22 +206,10 @@ func (cs *CacheService) cleanupLoop() {
 				continue // previous cleanup still running
 			}
 			cs.running.Store(true)
-			cs.runCleanup()
+			cs.Cleanup()
 			cs.running.Store(false)
 		case <-cs.stopChan:
 			return
 		}
-	}
-}
-
-// runCleanup executes a single cleanup pass.
-func (cs *CacheService) runCleanup() {
-	deleted, err := cs.Cleanup(cacheMaxAge)
-	if err != nil {
-		logrus.WithError(err).Error("CacheService: Cleanup failed")
-		return
-	}
-	if deleted > 0 {
-		logrus.WithField("deleted", deleted).Info("CacheService: Periodic cleanup completed")
 	}
 }

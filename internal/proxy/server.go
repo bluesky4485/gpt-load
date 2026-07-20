@@ -39,6 +39,11 @@ type ProxyServer struct {
 	cacheService      *services.CacheService
 }
 
+// GetChannelFactory returns the channel factory for external use (e.g., MCP manager).
+func (ps *ProxyServer) GetChannelFactory() *channel.Factory {
+	return ps.channelFactory
+}
+
 // NewProxyServer creates a new proxy server
 func NewProxyServer(
 	keyProvider *keypool.KeyProvider,
@@ -118,7 +123,7 @@ func (ps *ProxyServer) HandleProxy(c *gin.Context) {
 	isStream := channelHandler.IsStreamRequest(c, bodyBytes)
 
 	// Cache check for Tavily groups (skip for streaming requests).
-	if group.ChannelType == "tavily" && !isStream && ps.cacheService != nil {
+	if channel.IsCacheable(channelHandler) && !isStream && ps.cacheService != nil {
 		endpoint := extractEndpoint(c.Request.URL.Path)
 		if cacheKey, err := models.GenerateCacheKey(endpoint, finalBodyBytes); err == nil {
 			if cached := ps.cacheService.Get(cacheKey); cached != nil {
@@ -236,6 +241,8 @@ func (ps *ProxyServer) executeRequestWithRetry(
 		var statusCode int
 		var errorMessage string
 		var parsedError string
+		var errorBody []byte
+		var readErr error
 
 		if err != nil {
 			statusCode = 500
@@ -245,7 +252,7 @@ func (ps *ProxyServer) executeRequestWithRetry(
 		} else {
 			// Retryable upstream response (HTTP status code matched failover policy)
 			statusCode = resp.StatusCode
-			errorBody, readErr := io.ReadAll(resp.Body)
+			errorBody, readErr = io.ReadAll(resp.Body)
 			if readErr != nil {
 				logrus.Errorf("Failed to read error body: %v", readErr)
 				errorBody = []byte("Failed to read error body")
@@ -260,11 +267,9 @@ func (ps *ProxyServer) executeRequestWithRetry(
 		// 使用解析后的错误信息更新密钥状态
 		ps.keyProvider.UpdateStatus(apiKey, group, false, parsedError)
 
-		// Layer 4: Passive exhaustion detection for Tavily 432/433 responses
-		if group.ChannelType == "tavily" && ps.quotaTracker != nil {
-			if statusCode == 432 || statusCode == 433 {
-				ps.quotaTracker.MarkExhausted(apiKey.ID)
-			}
+		// Layer 4: Passive exhaustion detection via channel interface
+		if channel.IsQuotaExhausted(channelHandler, statusCode, errorBody) && ps.quotaTracker != nil {
+			ps.quotaTracker.MarkExhausted(apiKey.ID)
 		}
 
 		// 判断是否为最后一次尝试
@@ -295,7 +300,7 @@ func (ps *ProxyServer) executeRequestWithRetry(
 	logrus.Debugf("Request for group %s succeeded on attempt %d with key %s", group.Name, retryCount+1, utils.MaskAPIKey(apiKey.KeyValue))
 
 	// Layer 1: Increment quota usage for Tavily groups
-	if group.ChannelType == "tavily" && ps.quotaTracker != nil {
+	if channel.IsQuotaManaged(channelHandler) && ps.quotaTracker != nil {
 		ps.quotaTracker.IncrementUsed(apiKey.ID)
 	}
 
@@ -312,7 +317,7 @@ func (ps *ProxyServer) executeRequestWithRetry(
 
 		if isStream {
 			ps.handleStreamingResponse(c, resp)
-		} else if group.ChannelType == "tavily" && ps.cacheService != nil && resp.StatusCode == http.StatusOK {
+		} else if channel.IsCacheable(channelHandler) && ps.cacheService != nil && resp.StatusCode == http.StatusOK {
 			// Cache-eligible Tavily response: capture body, cache it, then send to client.
 			ps.handleCacheableResponse(c, resp, group, finalBodyBytes)
 		} else {

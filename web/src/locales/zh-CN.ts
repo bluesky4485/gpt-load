@@ -364,7 +364,7 @@ export default {
     mcpEnabled: "MCP 已启用",
     mcpDisabled: "MCP 未启用",
     mcpEnabledTooltip:
-      "为此 Tavily 分组启用模型上下文协议 (MCP) 端点。启用后，客户端可通过 /mcp/{group_name} 访问 Tavily 工具",
+      "为此分组启用模型上下文协议 (MCP) 端点。启用后，客户端可通过 /mcp/{group_name} 访问工具（Tavily 搜索 / 风鸟企业查询等）",
     quotaUsage: "额度用量",
     quotaUsageTip: "所有追踪密钥的已用额度 / 总额度",
     exhaustedKeys: "已耗尽密钥",

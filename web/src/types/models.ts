@@ -12,7 +12,7 @@ export type KeyStatus = "active" | "invalid" | undefined;
 export type GroupType = "standard" | "aggregate";
 
 // 渠道类型
-export type ChannelType = "openai" | "openai-response" | "gemini" | "anthropic" | "tavily";
+export type ChannelType = "openai" | "openai-response" | "gemini" | "anthropic" | "tavily" | "fengniao";
 
 // 数据模型定义
 export interface APIKey {
@@ -96,7 +96,7 @@ export interface GroupConfigOption {
   default_value: string | number;
 }
 
-// QuotaStats defines Tavily quota usage summary for a group.
+// QuotaStats defines quota usage summary for a group (Tavily/Fengniao).
 export interface QuotaStats {
   tracked_keys: number;
   total_quota: number;

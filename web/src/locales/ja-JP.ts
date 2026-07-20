@@ -380,7 +380,7 @@ export default {
     mcpEnabled: "MCP 有効",
     mcpDisabled: "MCP 無効",
     mcpEnabledTooltip:
-      "このTavilyグループのモデルコンテキストプロトコル (MCP) エンドポイントを有効にします。有効にすると、クライアントは /mcp/{group_name} 経由でTavilyツールにアクセスできます",
+      "このグループのモデルコンテキストプロトコル (MCP) エンドポイントを有効にします。有効にすると、クライアントは /mcp/{group_name} 経由でツール（Tavily検索、風鳥企業照会など）にアクセスできます",
     quotaUsage: "クォータ使用量",
     quotaUsageTip: "追跡対象キーの合計使用量 / 合計クォータ",
     exhaustedKeys: "枯渇キー",

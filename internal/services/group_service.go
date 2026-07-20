@@ -85,47 +85,47 @@ func NewGroupService(
 
 // GroupCreateParams captures all fields required to create a group.
 type GroupCreateParams struct {
-	Name                string
-	DisplayName         string
-	Description         string
-	GroupType           string
-	Upstreams           json.RawMessage
-	ChannelType         string
-	Sort                int
-	TestModel           string
-	ValidationEndpoint  string
-	ParamOverrides      map[string]any
-	ModelRedirectRules  map[string]string
-	ModelRedirectStrict bool
-	Config              map[string]any
-	HeaderRules         []models.HeaderRule
-	ProxyKeys           string
+	Name                 string
+	DisplayName          string
+	Description          string
+	GroupType            string
+	Upstreams            json.RawMessage
+	ChannelType          string
+	Sort                 int
+	TestModel            string
+	ValidationEndpoint   string
+	ParamOverrides       map[string]any
+	ModelRedirectRules   map[string]string
+	ModelRedirectStrict  bool
+	Config               map[string]any
+	HeaderRules          []models.HeaderRule
+	ProxyKeys            string
 	KeySelectionStrategy string
 	MCPEnabled           bool
-	SubGroups           []SubGroupInput
+	SubGroups            []SubGroupInput
 }
 
 // GroupUpdateParams captures updatable fields for a group.
 type GroupUpdateParams struct {
-	Name                *string
-	DisplayName         *string
-	Description         *string
-	GroupType           *string
-	Upstreams           json.RawMessage
-	HasUpstreams        bool
-	ChannelType         *string
-	Sort                *int
-	TestModel           string
-	HasTestModel        bool
-	ValidationEndpoint  *string
-	ParamOverrides      map[string]any
-	ModelRedirectRules  map[string]string
-	ModelRedirectStrict *bool
-	Config              map[string]any
-	HeaderRules         *[]models.HeaderRule
-	ProxyKeys           *string
+	Name                 *string
+	DisplayName          *string
+	Description          *string
+	GroupType            *string
+	Upstreams            json.RawMessage
+	HasUpstreams         bool
+	ChannelType          *string
+	Sort                 *int
+	TestModel            string
+	HasTestModel         bool
+	ValidationEndpoint   *string
+	ParamOverrides       map[string]any
+	ModelRedirectRules   map[string]string
+	ModelRedirectStrict  *bool
+	Config               map[string]any
+	HeaderRules          *[]models.HeaderRule
+	ProxyKeys            *string
 	KeySelectionStrategy *string
-	SubGroups           *[]SubGroupInput
+	SubGroups            *[]SubGroupInput
 }
 
 // GroupReorderItem captures a group ID and target sort value.
@@ -148,12 +148,12 @@ type RequestStats struct {
 	FailureRate    float64 `json:"failure_rate"`
 }
 
-// QuotaStats captures Tavily quota usage summary for a group.
+// QuotaStats captures quota usage summary for a group (Tavily/Fengniao).
 type QuotaStats struct {
-	TrackedKeys    int64 `json:"tracked_keys"`    // keys with total_quota > 0
-	TotalQuota     int64 `json:"total_quota"`     // sum of total_quota across tracked keys
-	UsedQuota      int64 `json:"used_quota"`      // sum of used_quota across tracked keys
-	ExhaustedKeys  int64 `json:"exhausted_keys"`  // keys where used_quota >= total_quota
+	TrackedKeys   int64 `json:"tracked_keys"`   // keys with total_quota > 0
+	TotalQuota    int64 `json:"total_quota"`    // sum of total_quota across tracked keys
+	UsedQuota     int64 `json:"used_quota"`     // sum of used_quota across tracked keys
+	ExhaustedKeys int64 `json:"exhausted_keys"` // keys where used_quota >= total_quota
 }
 
 // GroupStats aggregates all per-group metrics for dashboard usage.
@@ -162,7 +162,7 @@ type GroupStats struct {
 	Stats24Hour RequestStats `json:"stats_24_hour"`
 	Stats7Day   RequestStats `json:"stats_7_day"`
 	Stats30Day  RequestStats `json:"stats_30_day"`
-	QuotaStats  *QuotaStats  `json:"quota_stats,omitempty"` // non-nil only for Tavily groups
+	QuotaStats  *QuotaStats  `json:"quota_stats,omitempty"` // non-nil for quota-managed groups (Tavily, Fengniao)
 }
 
 // ConfigOption describes a configurable override exposed to clients.
@@ -215,7 +215,7 @@ func (s *GroupService) CreateGroup(ctx context.Context, params GroupCreateParams
 		testModel = strings.TrimSpace(params.TestModel)
 		if testModel == "" {
 			// Tavily does not require a test model; auto-fill a default for logging purposes.
-			if channelType == "tavily" {
+			if channelType == "tavily" || channelType == "fengniao" {
 				testModel = "tavily-search"
 			} else {
 				return nil, NewI18nError(app_errors.ErrValidation, "validation.test_model_required", nil)
@@ -247,6 +247,16 @@ func (s *GroupService) CreateGroup(ctx context.Context, params GroupCreateParams
 			cleanedConfig["failover_status_codes"] = "401,429,432,433"
 		}
 	}
+	if channelType == "fengniao" {
+		if cleanedConfig == nil {
+			cleanedConfig = make(map[string]any)
+		}
+		if _, hasFailover := cleanedConfig["failover_status_codes"]; !hasFailover {
+			// 风鸟 API 始终返回 HTTP 200，业务错误通过响应体 code 字段表达（9999=认证/额度，8888=参数错误）
+			// 唯一可能触发 failover 的是服务端临时故障 (500)
+			cleanedConfig["failover_status_codes"] = "500"
+		}
+	}
 
 	headerRulesJSON, err := s.normalizeHeaderRules(params.HeaderRules)
 	if err != nil {
@@ -257,7 +267,7 @@ func (s *GroupService) CreateGroup(ctx context.Context, params GroupCreateParams
 	}
 
 	// MCP is only supported for Tavily channel type.
-	if params.MCPEnabled && channelType != "tavily" {
+	if params.MCPEnabled && channelType != "tavily" && channelType != "fengniao" {
 		return nil, NewI18nError(app_errors.ErrValidation, "validation.mcp_tavily_only", nil)
 	}
 
@@ -272,23 +282,23 @@ func (s *GroupService) CreateGroup(ctx context.Context, params GroupCreateParams
 	}
 
 	group := models.Group{
-		Name:                name,
-		DisplayName:         strings.TrimSpace(params.DisplayName),
-		Description:         strings.TrimSpace(params.Description),
-		GroupType:           groupType,
-		Upstreams:           cleanedUpstreams,
-		ChannelType:         channelType,
-		Sort:                params.Sort,
-		TestModel:           testModel,
-		ValidationEndpoint:  validationEndpoint,
-		ParamOverrides:      params.ParamOverrides,
-		ModelRedirectRules:  convertToJSONMap(params.ModelRedirectRules),
-		ModelRedirectStrict: params.ModelRedirectStrict,
+		Name:                 name,
+		DisplayName:          strings.TrimSpace(params.DisplayName),
+		Description:          strings.TrimSpace(params.Description),
+		GroupType:            groupType,
+		Upstreams:            cleanedUpstreams,
+		ChannelType:          channelType,
+		Sort:                 params.Sort,
+		TestModel:            testModel,
+		ValidationEndpoint:   validationEndpoint,
+		ParamOverrides:       params.ParamOverrides,
+		ModelRedirectRules:   convertToJSONMap(params.ModelRedirectRules),
+		ModelRedirectStrict:  params.ModelRedirectStrict,
 		KeySelectionStrategy: keySelectionStrategy,
 		MCPEnabled:           params.MCPEnabled,
-		Config:              cleanedConfig,
-		HeaderRules:         headerRulesJSON,
-		ProxyKeys:           strings.TrimSpace(params.ProxyKeys),
+		Config:               cleanedConfig,
+		HeaderRules:          headerRulesJSON,
+		ProxyKeys:            strings.TrimSpace(params.ProxyKeys),
 	}
 
 	tx := s.db.WithContext(ctx).Begin()
@@ -517,6 +527,14 @@ func (s *GroupService) UpdateGroup(ctx context.Context, id uint, params GroupUpd
 				cleanedConfig["failover_status_codes"] = "401,429,432,433"
 			}
 		}
+		if group.ChannelType == "fengniao" {
+			if cleanedConfig == nil {
+				cleanedConfig = make(map[string]any)
+			}
+			if _, hasFailover := cleanedConfig["failover_status_codes"]; !hasFailover {
+				cleanedConfig["failover_status_codes"] = "500"
+			}
+		}
 		group.Config = cleanedConfig
 	}
 
@@ -565,7 +583,7 @@ func (s *GroupService) ToggleMCP(ctx context.Context, id uint, enabled bool) (*m
 		return nil, app_errors.ParseDBError(err)
 	}
 
-	if group.ChannelType != "tavily" && enabled {
+	if group.ChannelType != "tavily" && group.ChannelType != "fengniao" && enabled {
 		return nil, NewI18nError(app_errors.ErrValidation, "validation.mcp_tavily_only", nil)
 	}
 
@@ -853,7 +871,7 @@ func (s *GroupService) getStandardGroupStats(ctx context.Context, groupID uint) 
 		allErrors = append(allErrors, errs...)
 	}
 
-	// Fetch quota statistics for Tavily groups
+	// Fetch quota statistics for quota-managed groups (Tavily, Fengniao)
 	if quotaStats, err := s.fetchQuotaStats(ctx, groupID); err == nil && quotaStats != nil {
 		stats.QuotaStats = quotaStats
 	}
@@ -871,7 +889,7 @@ func (s *GroupService) getStandardGroupStats(ctx context.Context, groupID uint) 
 	return stats, nil
 }
 
-// fetchQuotaStats returns Tavily quota usage summary for a group.
+// fetchQuotaStats returns quota usage summary for a group.
 // Returns nil if the group has no keys with quota tracking (total_quota > 0).
 func (s *GroupService) fetchQuotaStats(ctx context.Context, groupID uint) (*QuotaStats, error) {
 	var result struct {

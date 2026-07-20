@@ -4,8 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"gpt-load/internal/channel"
 	"gpt-load/internal/encryption"
+	"gpt-load/internal/httpclient"
 	"gpt-load/internal/models"
+	"gpt-load/internal/types"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -39,8 +42,11 @@ func newTestQuotaTracker(t *testing.T) (*QuotaTracker, *gorm.DB) {
 
 	encSvc, _ := encryption.NewService("") // no-op encryption
 
+	channelFactory := channel.NewFactory(nil, httpclient.NewHTTPClientManager())
+
 	qt := &QuotaTracker{
 		db:              db,
+		channelFactory:  channelFactory,
 		settingsManager: nil, // not needed for these tests
 		encryptionSvc:   encSvc,
 		httpClient:      &http.Client{Timeout: 5 * time.Second},
@@ -180,19 +186,21 @@ func TestMonthlyReset(t *testing.T) {
 
 	// Create a Tavily group.
 	tavilyGroup := models.Group{
-		Name:        "tavily-test",
-		ChannelType: "tavily",
-		Upstreams:   []byte(`[{"url":"https://api.tavily.com"}]`),
-		TestModel:   "tavily-search",
+		Name:            "tavily-test",
+		ChannelType:     "tavily",
+		Upstreams:       []byte(`[{"url":"https://api.tavily.com"}]`),
+		TestModel:       "tavily-search",
+		EffectiveConfig: types.SystemSettings{RequestTimeout: 600, ConnectTimeout: 15, IdleConnTimeout: 120, ResponseHeaderTimeout: 600, MaxIdleConns: 100, MaxIdleConnsPerHost: 50},
 	}
 	db.Create(&tavilyGroup)
 
 	// Create a non-Tavily group.
 	openaiGroup := models.Group{
-		Name:        "openai-test",
-		ChannelType: "openai",
-		Upstreams:   []byte(`[{"url":"https://api.openai.com"}]`),
-		TestModel:   "gpt-4",
+		Name:            "openai-test",
+		ChannelType:     "openai",
+		Upstreams:       []byte(`[{"url":"https://api.openai.com"}]`),
+		TestModel:       "gpt-4",
+		EffectiveConfig: types.SystemSettings{RequestTimeout: 600, ConnectTimeout: 15, IdleConnTimeout: 120, ResponseHeaderTimeout: 600, MaxIdleConns: 100, MaxIdleConnsPerHost: 50},
 	}
 	db.Create(&openaiGroup)
 
@@ -404,10 +412,11 @@ func TestWorkerPool_IntegrationWithSyncAllKeys(t *testing.T) {
 
 	// Create a Tavily group pointing to the mock server.
 	group := models.Group{
-		Name:        "tavily-integration",
-		ChannelType: "tavily",
-		Upstreams:   []byte(fmt.Sprintf(`[{"url":"%s"}]`, server.URL)),
-		TestModel:   "tavily-search",
+		Name:            "tavily-integration",
+		ChannelType:     "tavily",
+		Upstreams:       []byte(fmt.Sprintf(`[{"url":"%s"}]`, server.URL)),
+		TestModel:       "tavily-search",
+		EffectiveConfig: types.SystemSettings{RequestTimeout: 600, ConnectTimeout: 15, IdleConnTimeout: 120, ResponseHeaderTimeout: 600, MaxIdleConns: 100, MaxIdleConnsPerHost: 50},
 	}
 	db.Create(&group)
 

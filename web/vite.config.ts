@@ -24,6 +24,14 @@ export default defineConfig(({ mode }) => {
           target: env.VITE_API_BASE_URL || "http://127.0.0.1:3001",
           changeOrigin: true,
         },
+        "/proxy": {
+          target: env.VITE_API_BASE_URL || "http://127.0.0.1:3001",
+          changeOrigin: true,
+        },
+        "/mcp": {
+          target: env.VITE_API_BASE_URL || "http://127.0.0.1:3001",
+          changeOrigin: true,
+        },
       },
     },
     // 构建配置

@@ -102,7 +102,13 @@ func (s *KeyService) processAndCreateKeys(
 		existingHashMap[h] = true
 	}
 
-	// 2. Prepare new keys for creation
+	// 2. Get group channel type for default quota assignment
+	var group models.Group
+	if err := s.DB.Select("id, channel_type").First(&group, groupID).Error; err != nil {
+		return 0, 0, fmt.Errorf("failed to get group: %w", err)
+	}
+
+	// 3. Prepare new keys for creation
 	var newKeysToCreate []models.APIKey
 	uniqueNewKeys := make(map[string]bool)
 
@@ -125,19 +131,24 @@ func (s *KeyService) processAndCreateKeys(
 		}
 
 		uniqueNewKeys[trimmedKey] = true
-		newKeysToCreate = append(newKeysToCreate, models.APIKey{
+		apiKey := models.APIKey{
 			GroupID:  groupID,
 			KeyValue: encryptedKey,
 			KeyHash:  keyHash,
 			Status:   models.KeyStatusActive,
-		})
+		}
+		// Fengniao: set default daily quota (50 requests per key per day)
+		if group.ChannelType == "fengniao" {
+			apiKey.TotalQuota = 50
+		}
+		newKeysToCreate = append(newKeysToCreate, apiKey)
 	}
 
 	if len(newKeysToCreate) == 0 {
 		return 0, len(keys), nil
 	}
 
-	// 3. Use KeyProvider to add keys in chunks
+	// 4. Use KeyProvider to add keys in chunks
 	for i := 0; i < len(newKeysToCreate); i += chunkSize {
 		end := i + chunkSize
 		if end > len(newKeysToCreate) {

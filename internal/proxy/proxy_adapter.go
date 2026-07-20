@@ -11,6 +11,7 @@ import (
 	"time"
 
 	app_errors "gpt-load/internal/errors"
+	"gpt-load/internal/channel"
 	"gpt-load/internal/models"
 	"gpt-load/internal/utils"
 
@@ -22,8 +23,9 @@ import (
 // Used by MCP tools to reuse key management, retry, failover, and quota tracking.
 type ProxyRequest struct {
 	Group      *models.Group
-	Endpoint   string     // e.g., "search", "extract", "crawl", "map"
-	Body       []byte     // JSON request body
+	Endpoint   string       // e.g., "search", "extract", "crawl", "map", "/skills/searchHint?key=xxx"
+	Method     string       // "GET" or "POST" (default: "POST")
+	Body       []byte       // JSON request body (POST) or nil (GET)
 	GinContext *gin.Context // Original gin context for logging (source IP, user agent, etc.)
 }
 
@@ -55,7 +57,7 @@ func (ps *ProxyServer) Execute(ctx context.Context, proxyReq *ProxyRequest) (*Pr
 	}
 
 	// 3. Check cache (Tavily only).
-	if group.ChannelType == "tavily" && ps.cacheService != nil {
+	if channel.IsCacheable(channelHandler) && ps.cacheService != nil {
 		if cacheKey, cacheErr := models.GenerateCacheKey(proxyReq.Endpoint, finalBody); cacheErr == nil {
 			if cached := ps.cacheService.Get(cacheKey); cached != nil {
 				logrus.WithFields(logrus.Fields{
@@ -78,21 +80,21 @@ func (ps *ProxyServer) Execute(ctx context.Context, proxyReq *ProxyRequest) (*Pr
 	}
 
 	// 4. Execute with retry.
-	return ps.executeProxy(ctx, channelHandler, group, finalBody, proxyReq.Endpoint, proxyReq.GinContext, startTime, 0)
+	method := proxyReq.Method
+	if method == "" {
+		method = http.MethodPost
+	}
+	return ps.executeProxy(ctx, channelHandler, group, finalBody, proxyReq.Endpoint, method, proxyReq.GinContext, startTime, 0)
 }
 
 // executeProxy is the recursive retry loop for programmatic proxy execution.
 func (ps *ProxyServer) executeProxy(
 	ctx context.Context,
-	channelHandler interface {
-		BuildUpstreamURL(originalURL *url.URL, groupName string) (string, error)
-		ModifyRequest(req *http.Request, apiKey *models.APIKey, group *models.Group)
-		GetHTTPClient() *http.Client
-		ApplyModelRedirect(req *http.Request, bodyBytes []byte, group *models.Group) ([]byte, error)
-	},
+	channelHandler channel.ChannelProxy,
 	group *models.Group,
 	bodyBytes []byte,
 	endpoint string,
+	method string,
 	ginCtx *gin.Context,
 	startTime time.Time,
 	retryCount int,
@@ -119,21 +121,33 @@ func (ps *ProxyServer) executeProxy(
 	reqCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, upstreamURL, bytes.NewReader(bodyBytes))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
+	var req *http.Request
+	if method == http.MethodGet {
+		req, err = http.NewRequestWithContext(reqCtx, http.MethodGet, upstreamURL, nil)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create GET request: %w", err)
+		}
+		req.Header.Set("Accept", "application/json")
+	} else {
+		req, err = http.NewRequestWithContext(reqCtx, http.MethodPost, upstreamURL, bytes.NewReader(bodyBytes))
+		if err != nil {
+			return nil, fmt.Errorf("failed to create POST request: %w", err)
+		}
+		req.ContentLength = int64(len(bodyBytes))
+		req.Header.Set("Content-Type", "application/json")
 	}
-	req.ContentLength = int64(len(bodyBytes))
-	req.Header.Set("Content-Type", "application/json")
 
-	// Apply model redirection.
-	finalBodyBytes, err := channelHandler.ApplyModelRedirect(req, bodyBytes, group)
-	if err != nil {
-		return nil, fmt.Errorf("model redirect failed: %w", err)
-	}
-	if !bytes.Equal(finalBodyBytes, bodyBytes) {
-		req.Body = io.NopCloser(bytes.NewReader(finalBodyBytes))
-		req.ContentLength = int64(len(finalBodyBytes))
+	// Apply model redirection (only for POST with body).
+	var finalBodyBytes []byte
+	if method != http.MethodGet && len(bodyBytes) > 0 {
+		finalBodyBytes, err = channelHandler.ApplyModelRedirect(req, bodyBytes, group)
+		if err != nil {
+			return nil, fmt.Errorf("model redirect failed: %w", err)
+		}
+		if !bytes.Equal(finalBodyBytes, bodyBytes) {
+			req.Body = io.NopCloser(bytes.NewReader(finalBodyBytes))
+			req.ContentLength = int64(len(finalBodyBytes))
+		}
 	}
 
 	// Inject auth header via channel handler (e.g., Authorization: Bearer <key>).
@@ -178,7 +192,7 @@ func (ps *ProxyServer) executeProxy(
 			if isLastAttempt {
 				return nil, fmt.Errorf("upstream request failed after %d attempts: %w", retryCount+1, err)
 			}
-			return ps.executeProxy(ctx, channelHandler, group, bodyBytes, endpoint, ginCtx, startTime, retryCount+1)
+			return ps.executeProxy(ctx, channelHandler, group, bodyBytes, endpoint, method, ginCtx, startTime, retryCount+1)
 		}
 
 		// Failover status code matched.
@@ -195,10 +209,8 @@ func (ps *ProxyServer) executeProxy(
 		ps.keyProvider.UpdateStatus(apiKey, group, false, parsedError)
 
 		// Passive quota exhaustion detection for Tavily 432/433.
-		if group.ChannelType == "tavily" && ps.quotaTracker != nil {
-			if resp.StatusCode == 432 || resp.StatusCode == 433 {
-				ps.quotaTracker.MarkExhausted(apiKey.ID)
-			}
+		if channel.IsQuotaExhausted(channelHandler, resp.StatusCode, errorBody) && ps.quotaTracker != nil {
+			ps.quotaTracker.MarkExhausted(apiKey.ID)
 		}
 
 		isLastAttempt := retryCount >= cfg.MaxRetries
@@ -216,7 +228,7 @@ func (ps *ProxyServer) executeProxy(
 			}, fmt.Errorf("upstream error after %d attempts (HTTP %d): %s", retryCount+1, resp.StatusCode, parsedError)
 		}
 
-		return ps.executeProxy(ctx, channelHandler, group, bodyBytes, endpoint, ginCtx, startTime, retryCount+1)
+		return ps.executeProxy(ctx, channelHandler, group, bodyBytes, endpoint, method, ginCtx, startTime, retryCount+1)
 	}
 
 	// Success path.
@@ -224,7 +236,7 @@ func (ps *ProxyServer) executeProxy(
 		group.Name, retryCount+1, utils.MaskAPIKey(apiKey.KeyValue))
 
 	// Increment quota usage for Tavily groups.
-	if group.ChannelType == "tavily" && ps.quotaTracker != nil {
+	if channel.IsQuotaManaged(channelHandler) && ps.quotaTracker != nil {
 		ps.quotaTracker.IncrementUsed(apiKey.ID)
 	}
 
@@ -238,9 +250,9 @@ func (ps *ProxyServer) executeProxy(
 	ps.logMCPRequest(ginCtx, group, apiKey, startTime, resp.StatusCode, nil, false, upstreamURL, endpoint, bodyBytes, models.RequestTypeFinal)
 
 	// Cache successful Tavily responses.
-	if group.ChannelType == "tavily" && ps.cacheService != nil && resp.StatusCode == http.StatusOK {
+	if channel.IsCacheable(channelHandler) && ps.cacheService != nil && resp.StatusCode == http.StatusOK {
 		if cacheKey, cacheErr := models.GenerateCacheKey(endpoint, bodyBytes); cacheErr == nil {
-			if putErr := ps.cacheService.Put(cacheKey, group.ID, endpoint, string(respBody), resp.StatusCode); putErr != nil {
+			if putErr := ps.cacheService.Put(cacheKey, group.ID, endpoint, string(respBody), resp.StatusCode, ps.cacheService.GetTTLForGroup(group.ID)); putErr != nil {
 				logrus.WithFields(logrus.Fields{
 					"group":    group.Name,
 					"endpoint": endpoint,
@@ -300,7 +312,7 @@ func (ps *ProxyServer) logMCPRequest(
 		IsStream:     isStream,
 		UpstreamAddr: utils.TruncateString(upstreamAddr, 500),
 		RequestBody:  requestBodyToLog,
-		Model:        fmt.Sprintf("tavily-%s", endpoint),
+		Model:        fmt.Sprintf("%s-%s", group.ChannelType, endpoint),
 	}
 
 	if apiKey != nil {
