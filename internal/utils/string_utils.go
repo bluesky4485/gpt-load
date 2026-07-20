@@ -57,6 +57,15 @@ func MaskAPIKey(key string) string {
 	return fmt.Sprintf("%s****%s", prefix, suffix)
 }
 
+
+// RedactSecret replaces every occurrence of secret in text with its masked form.
+func RedactSecret(text, secret string) string {
+	if secret == "" {
+		return text
+	}
+	return strings.ReplaceAll(text, secret, MaskAPIKey(secret))
+}
+
 // TruncateString shortens a string to a maximum length.
 func TruncateString(s string, maxLength int) string {
 	if len(s) > maxLength {
