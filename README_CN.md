@@ -841,11 +841,28 @@ MCP 端点支持三种认证方式：
 
 [![Contributors](https://contrib.rocks/image?repo=tbphp/gpt-load)](https://github.com/tbphp/gpt-load/graphs/contributors)
 
-## 支持者
+## 赞助商
 
-- 非常感谢 [LINUX DO](https://linux.do) 社区的支持！
-- 本项目由 DigitalOcean 支持。
-  [![DigitalOcean Referral Badge](https://web-platforms.sfo2.cdn.digitaloceanspaces.com/WWW/Badge%202.svg)](https://www.digitalocean.com/?refcode=3d52cff21342&utm_campaign=Referral_Invite&utm_medium=Referral_Program&utm_source=badge)
+<table>
+<tbody>
+<tr>
+<td width="180"><a href="https://unity2.ai/register?source=gptload"><img src="./screenshot/unity2ai.jpg" alt="Unity2.ai" width="150"></a></td>
+<td>感谢 Unity2.ai 赞助了本项目！Unity2.ai 是面向个人开发者、团队和企业的高性能 AI 模型 API 中转平台，长期服务国内头部企业，日均承载超 300 亿 token 调用，支持 5000 RPM 级高并发。支持余额计费、首充赠额、组合订阅、企业开票和专属对接。通过<a href="https://unity2.ai/register?source=gptload">此链接</a>注册可领取 $2 余额，加入官方群再送 $10 余额，最高可领 $12 免费额度。</td>
+</tr>
+<tr>
+<td width="180"><a href="https://linux.do"><img src="./screenshot/l.png" alt="LINUX DO" width="150"></a></td>
+<td>非常感谢 LINUX DO 社区的支持！</td>
+</tr>
+<tr>
+<td width="180"><a href="https://teamorouter.com/?ref=gptload"><img src="./screenshot/teamorouter.png" alt="TeamoRouter" width="150"></a></td>
+<td>感谢 TeamoRouter 赞助了本项目！TeamoRouter 为 AI API 提供智能流量路由，帮助开发者通过自动故障转移、负载均衡和成本优化来优化多供应商 AI 工作负载。</td>
+</tr>
+<tr>
+<td width="180"><a href="https://www.digitalocean.com/?refcode=3d52cff21342&utm_campaign=Referral_Invite&utm_medium=Referral_Program&utm_source=badge"><img src="https://web-platforms.sfo2.cdn.digitaloceanspaces.com/WWW/Badge%202.svg" alt="DigitalOcean Referral Badge" width="150"></a></td>
+<td>本项目由 DigitalOcean 支持。</td>
+</tr>
+</tbody>
+</table>
 
 ## 许可证
 

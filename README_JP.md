@@ -840,12 +840,28 @@ GPT-Loadに貢献してくださったすべての開発者に感謝します！
 
 [![Contributors](https://contrib.rocks/image?repo=tbphp/gpt-load)](https://github.com/tbphp/gpt-load/graphs/contributors)
 
-## サポーター
+## スポンサー
 
-- [LINUX DO](https://linux.do) コミュニティからのサポートに心より感謝いたします！
-
-- このプロジェクトはDigitalOceanの支援を受けています。
-  [![DigitalOcean Referral Badge](https://web-platforms.sfo2.cdn.digitaloceanspaces.com/WWW/Badge%202.svg)](https://www.digitalocean.com/?refcode=3d52cff21342&utm_campaign=Referral_Invite&utm_medium=Referral_Program&utm_source=badge)
+<table>
+<tbody>
+<tr>
+<td width="180"><a href="https://unity2.ai/register?source=gptload"><img src="./screenshot/unity2ai.jpg" alt="Unity2.ai" width="150"></a></td>
+<td>Unity2.aiによる本プロジェクトへのスポンサー支援に感謝します！Unity2.aiは、個人開発者、チーム、企業向けの高性能AIモデルAPI中継プラットフォームです。中国国内の大手企業に長期的にサービスを提供しており、1日あたり300億token超の呼び出しを処理し、5000 RPM級の高並行性をサポートします。残高課金、初回チャージ特典、組み合わせサブスクリプション、企業向け請求書発行、専属連携サポートに対応しています。<a href="https://unity2.ai/register?source=gptload">こちらのリンク</a>から登録すると\の残高を受け取れ、公式グループ参加でさらに\の残高、最大\の無料枠を受け取れます。</td>
+</tr>
+<tr>
+<td width="180"><a href="https://linux.do"><img src="./screenshot/l.png" alt="LINUX DO" width="150"></a></td>
+<td>LINUX DOコミュニティからのサポートに心より感謝いたします！</td>
+</tr>
+<tr>
+<td width="180"><a href="https://teamorouter.com/?ref=gptload"><img src="./screenshot/teamorouter.png" alt="TeamoRouter" width="150"></a></td>
+<td>TeamoRouterによる本プロジェクトへのスポンサー支援に感謝します！TeamoRouterはAI API向けのインテリジェントトラフィックルーティングを提供し、自動フェイルオーバー、負荷分散、コスト最適化によりマルチプロバイダーAIワークロードの最適化を支援します。</td>
+</tr>
+<tr>
+<td width="180"><a href="https://www.digitalocean.com/?refcode=3d52cff21342&utm_campaign=Referral_Invite&utm_medium=Referral_Program&utm_source=badge"><img src="https://web-platforms.sfo2.cdn.digitaloceanspaces.com/WWW/Badge%202.svg" alt="DigitalOcean Referral Badge" width="150"></a></td>
+<td>このプロジェクトはDigitalOceanの支援を受けています。</td>
+</tr>
+</tbody>
+</table>
 
 ## ライセンス
 
