@@ -142,17 +142,22 @@ func Auth(authConfig types.AuthConfig) gin.HandlerFunc {
 // ProxyAuth
 func ProxyAuth(gm *services.GroupManager) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// Check key
-		key := extractAuthKey(c)
-		if key == "" {
-			response.Error(c, app_errors.ErrUnauthorized)
+		// 先获取 group，以便根据渠道类型决定认证策略
+		group, err := gm.GetGroupByName(c.Param("group_name"))
+		if err != nil {
+			response.Error(c, app_errors.NewAPIError(app_errors.ErrInternalServer, "Failed to retrieve proxy group"))
 			c.Abort()
 			return
 		}
 
-		group, err := gm.GetGroupByName(c.Param("group_name"))
-		if err != nil {
-			response.Error(c, app_errors.NewAPIError(app_errors.ErrInternalServer, "Failed to retrieve proxy group"))
+		// 风鸟渠道的搜索接口使用 key 作为业务参数名（?key=华为），
+		// 与 gpt-load 的 ?key= 认证参数冲突，因此风鸟渠道跳过 query key 提取，
+		// 只走 Header 认证（Authorization / X-Api-Key），让 ?key= 透传给上游。
+		skipQueryKey := group.ChannelType == "fengniao"
+
+		key := extractAuthKeyWithSkip(c, skipQueryKey)
+		if key == "" {
+			response.Error(c, app_errors.ErrUnauthorized)
 			c.Abort()
 			return
 		}
@@ -245,12 +250,21 @@ func isMonitoringEndpoint(path string) bool {
 
 // extractAuthKey extracts a auth key.
 func extractAuthKey(c *gin.Context) string {
+	return extractAuthKeyWithSkip(c, false)
+}
+
+// extractAuthKeyWithSkip extracts an auth key, optionally skipping the ?key= query parameter.
+// When skipQueryKey is true (e.g., for fengniao channel where ?key= is a business parameter),
+// only Header-based authentication is used, preserving the query ?key= for upstream.
+func extractAuthKeyWithSkip(c *gin.Context, skipQueryKey bool) string {
 	// Query key
-	if key := c.Query("key"); key != "" {
-		query := c.Request.URL.Query()
-		query.Del("key")
-		c.Request.URL.RawQuery = query.Encode()
-		return key
+	if !skipQueryKey {
+		if key := c.Query("key"); key != "" {
+			query := c.Request.URL.Query()
+			query.Del("key")
+			c.Request.URL.RawQuery = query.Encode()
+			return key
+		}
 	}
 
 	// Bearer token
