@@ -308,14 +308,14 @@ func (ps *ProxyServer) logMCPRequest(
 		IsSuccess:    finalError == nil && statusCode < 400,
 		SourceIP:     sourceIP,
 		StatusCode:   statusCode,
-		RequestPath:  utils.TruncateString(fmt.Sprintf("/mcp/%s/%s", group.Name, endpoint), 500),
+		RequestPath:  utils.TruncateString(fmt.Sprintf("/mcp/%s/%s", group.Name, strings.TrimLeft(endpoint, "/")), 500),
 		Duration:     duration,
 		UserAgent:    userAgent,
 		RequestType:  requestType,
 		IsStream:     isStream,
 		UpstreamAddr: utils.TruncateString(upstreamAddr, 500),
 		RequestBody:  requestBodyToLog,
-		Model:        fmt.Sprintf("%s-%s", group.ChannelType, endpoint),
+		Model:        fmt.Sprintf("%s-%s", group.ChannelType, strings.TrimLeft(endpoint, "/")),
 	}
 
 	if apiKey != nil {
