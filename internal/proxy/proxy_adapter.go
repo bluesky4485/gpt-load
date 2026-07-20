@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	app_errors "gpt-load/internal/errors"
@@ -110,7 +111,9 @@ func (ps *ProxyServer) executeProxy(
 	// Build upstream URL.
 	// Construct a synthetic URL that BaseChannel.BuildUpstreamURL can parse:
 	// it strips "/proxy/<groupName>" prefix and appends the remainder to the upstream base.
-	fakeURL, _ := url.Parse(fmt.Sprintf("/proxy/%s/%s", group.Name, endpoint))
+	// 确保 endpoint 与 /proxy/<group>/ 之间不会产生双斜杠
+	cleanEndpoint := strings.TrimLeft(endpoint, "/")
+	fakeURL, _ := url.Parse(fmt.Sprintf("/proxy/%s/%s", group.Name, cleanEndpoint))
 	upstreamURL, err := channelHandler.BuildUpstreamURL(fakeURL, group.Name)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build upstream URL: %w", err)
