@@ -26,9 +26,9 @@ For detailed documentation, please visit [Official Documentation](https://www.gp
 - **High-Performance Design**: Zero-copy streaming, connection pool reuse, and atomic operations
 - **Production Ready**: Graceful shutdown, error recovery, and comprehensive security mechanisms
 - **Dual Authentication**: Separate authentication for management and proxy, with proxy authentication supporting global and group-level keys
-- **MCP Server Support**: Built-in Model Context Protocol server for Tavily search integration with AI tools (Claude Desktop, Cursor, etc.)
-- **Response Caching**: Intelligent caching for Tavily API responses to reduce costs and improve performance
-- **Quota Tracking**: Real-time monitoring of Tavily API usage with automatic monthly resets and exhaustion detection
+- **MCP Server Support**: Built-in Model Context Protocol server for Tavily search and Fengniao enterprise data integration with AI tools (Claude Desktop, Cursor, etc.)
+- **Response Caching**: Intelligent caching for Tavily and Fengniao API responses to reduce costs and improve performance
+- **Quota Tracking**: Real-time monitoring of Tavily (monthly) and Fengniao (daily) API usage with automatic resets and exhaustion detection
 
 ## Supported AI Services
 
@@ -38,6 +38,7 @@ GPT-Load serves as a transparent proxy service, completely preserving the native
 - **Google Gemini Format**: Native APIs for Gemini Pro, Gemini Pro Vision, and other models
 - **Anthropic Claude Format**: Claude series models, supporting high-quality conversations and text generation
 - **Tavily Search API**: Real-time search, content extraction, website crawling, and site mapping with MCP server support
+- **Fengniao Enterprise API**: Chinese enterprise business registration, shareholding, and risk data query service with MCP server support (50 requests/key/day, daily quota reset)
 
 ## Quick Start
 
@@ -586,24 +587,34 @@ response = client.messages.create(
 
 ## MCP (Model Context Protocol) Integration
 
-GPT-Load provides a built-in MCP server for Tavily search integration, enabling AI tools like Claude Desktop and Cursor to access real-time search capabilities through the Model Context Protocol.
+GPT-Load provides a built-in MCP server for Tavily search and Fengniao enterprise data integration, enabling AI tools like Claude Desktop and Cursor to access real-time search and Chinese enterprise business data capabilities through the Model Context Protocol.
 
 ### Features
 
-- **Search Tools**: `tavily_search`, `tavily_extract`, `tavily_crawl`, `tavily_map`
+- **Search Tools**: `tavily_search`, `tavily_extract`, `tavily_crawl`, `tavily_map`; `fengniao_search`, `fengniao_basic_info`, `fengniao_shareholders`, `fengniao_executives`, `fengniao_investments`, `fengniao_changes`, `fengniao_risk_executed`, `fengniao_risk_dishonest`, `fengniao_risk_limit_consumption`, `fengniao_risk_abnormal_operation`, `fengniao_risk_serious_illegal`, `fengniao_risk_admin_penalty`
 - **Response Caching**: Automatic caching of identical requests to reduce API calls and costs
-- **Quota Tracking**: Real-time monitoring of API usage with automatic monthly resets
+- **Quota Tracking**: Tavily: real-time usage tracking with automatic monthly resets; Fengniao: daily quota (50 requests/key/day) with automatic daily reset at midnight (Asia/Shanghai) and passive exhaustion detection
 - **Request Logging**: All MCP requests are logged in the web interface for monitoring and debugging
 - **Authentication**: Uses group-level proxy keys for secure access control
-- **Load Balancing**: Automatic rotation across multiple Tavily API keys with failover
+- **Load Balancing**: Automatic rotation across multiple API keys with failover
 
 ### Quick Setup
 
-1. **Create a Tavily Group in GPT-Load**
+1. **Create a Group in GPT-Load**
+
+   **For Tavily:**
    - Open web interface at `http://localhost:3001`
    - Navigate to Keys → Add Group
    - Select "Tavily" as channel type
    - Add your Tavily API keys
+   - Configure group-level proxy keys for authentication
+   - Enable "MCP Server" in group settings
+
+   **For Fengniao:**
+   - Open web interface at `http://localhost:3001`
+   - Navigate to Keys → Add Group
+   - Select "Fengniao" as channel type
+   - Add your Fengniao API keys (default upstream: `https://m.riskbird.com/prod-qbb-api`)
    - Configure group-level proxy keys for authentication
    - Enable "MCP Server" in group settings
 
@@ -628,6 +639,34 @@ GPT-Load provides a built-in MCP server for Tavily search integration, enabling 
    {
      "tavily": {
        "url": "http://localhost:3001/mcp/your-tavily-group-name",
+       "headers": {
+         "Authorization": "Bearer your-proxy-key"
+       }
+     }
+   }
+   ```
+
+   **Fengniao MCP Configuration:**
+
+   For **Claude Desktop** (`~/Library/Application Support/Claude/claude_desktop_config.json`):
+   ```json
+   {
+     "mcpServers": {
+       "fengniao": {
+         "url": "http://localhost:3001/mcp/your-fengniao-group-name",
+         "headers": {
+           "Authorization": "Bearer your-proxy-key"
+         }
+       }
+     }
+   }
+   ```
+
+   For **Cursor** (Settings → Features → MCP Servers):
+   ```json
+   {
+     "fengniao": {
+       "url": "http://localhost:3001/mcp/your-fengniao-group-name",
        "headers": {
          "Authorization": "Bearer your-proxy-key"
        }
@@ -675,6 +714,78 @@ Generate comprehensive sitemaps of websites.
 - `search` (optional): Filter results by search term
 - `max_results` (optional): Maximum sitemap entries
 
+#### fengniao_search
+Search for Chinese enterprises by name to obtain their unique identifier (entid).
+
+**Parameters:**
+- `key` (required): Chinese enterprise name to search for
+
+#### fengniao_basic_info
+Query basic business registration information for an enterprise.
+
+**Parameters:**
+- `entid` (required): Enterprise unique identifier (obtained from fengniao_search)
+
+#### fengniao_shareholders
+Query shareholder information for an enterprise.
+
+**Parameters:**
+- `entid` (required): Enterprise unique identifier
+
+#### fengniao_executives
+Query executive/key personnel information for an enterprise.
+
+**Parameters:**
+- `entid` (required): Enterprise unique identifier
+
+#### fengniao_investments
+Query investment (subsidiary) information for an enterprise.
+
+**Parameters:**
+- `entid` (required): Enterprise unique identifier
+
+#### fengniao_changes
+Query registration change records for an enterprise.
+
+**Parameters:**
+- `entid` (required): Enterprise unique identifier
+
+#### fengniao_risk_executed
+Query executed judgment records for an enterprise.
+
+**Parameters:**
+- `entid` (required): Enterprise unique identifier
+
+#### fengniao_risk_dishonest
+Query dishonest judgment (失信被执行人) records for an enterprise.
+
+**Parameters:**
+- `entid` (required): Enterprise unique identifier
+
+#### fengniao_risk_limit_consumption
+Query consumption restriction (限制消费) records for an enterprise.
+
+**Parameters:**
+- `entid` (required): Enterprise unique identifier
+
+#### fengniao_risk_abnormal_operation
+Query abnormal operation (经营异常) records for an enterprise.
+
+**Parameters:**
+- `entid` (required): Enterprise unique identifier
+
+#### fengniao_risk_serious_illegal
+Query serious illegal (严重违法) records for an enterprise.
+
+**Parameters:**
+- `entid` (required): Enterprise unique identifier
+
+#### fengniao_risk_admin_penalty
+Query administrative penalty records for an enterprise.
+
+**Parameters:**
+- `entid` (required): Enterprise unique identifier
+
 ### Authentication Methods
 
 The MCP endpoint supports three authentication methods:
@@ -703,11 +814,11 @@ The MCP endpoint supports three authentication methods:
 - **Request Logs**: View all MCP requests in the web interface under Logs
 - **Key Status**: Monitor API key usage, quota, and health in Keys management
 - **Caching**: Cache hit rate is shown in key statistics
-- **Quota Tracking**: Real-time usage tracking with automatic monthly resets
+- **Quota Tracking**: Tavily: real-time usage tracking with automatic monthly resets; Fengniao: daily quota (50 requests/key/day) with automatic daily reset at midnight (Asia/Shanghai) and passive exhaustion detection
 
 ### Advanced Configuration
 
-Enable these settings in your Tavily group configuration:
+Enable these settings in your group configuration (applies to both Tavily and Fengniao):
 
 | Setting | Description |
 |---------|-------------|
@@ -731,7 +842,7 @@ Enable these settings in your Tavily group configuration:
 
 **Rate limiting:**
 - Monitor key quota in web interface
-- Add more Tavily API keys to the group for load balancing
+- Add more API keys to the group for load balancing
 - Enable response caching to reduce API calls
 
 For more details, see [Tavily API Documentation](https://docs.tavily.com/) and [MCP Specification](https://modelcontextprotocol.io/).
