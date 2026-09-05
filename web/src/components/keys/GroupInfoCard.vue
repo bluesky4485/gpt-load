@@ -120,9 +120,9 @@ async function copyProxyKeys() {
 
 const mcpLoading = ref(false);
 
-// 判断是否为Tavily分组
+// 判断是否为支持 MCP 的搜索类分组（Tavily / 风鸟 / 豆包搜索）
 const isTavilyGroup = computed(() => {
-  return props.group?.channel_type === "tavily" || props.group?.channel_type === "fengniao";
+  return ["tavily", "fengniao", "doubao-web-search"].includes(props.group?.channel_type ?? "");
 });
 
 // 额度使用率颜色类型

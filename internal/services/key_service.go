@@ -141,6 +141,10 @@ func (s *KeyService) processAndCreateKeys(
 		if group.ChannelType == "fengniao" {
 			apiKey.TotalQuota = 50
 		}
+		// Doubao web search: set default monthly quota (500 free requests per key per month)
+		if group.ChannelType == "doubao-web-search" {
+			apiKey.TotalQuota = 500
+		}
 		newKeysToCreate = append(newKeysToCreate, apiKey)
 	}
 

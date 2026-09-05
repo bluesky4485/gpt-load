@@ -67,7 +67,7 @@ interface GroupFormData {
   display_name: string;
   description: string;
   upstreams: UpstreamInfo[];
-  channel_type: "anthropic" | "gemini" | "openai" | "openai-response" | "tavily" | "fengniao";
+  channel_type: "anthropic" | "gemini" | "openai" | "openai-response" | "tavily" | "fengniao" | "doubao-web-search";
   sort: number;
   test_model: string;
   validation_endpoint: string;
@@ -133,6 +133,8 @@ const testModelPlaceholder = computed(() => {
       return "tavily";
     case "fengniao":
       return "fengniao";
+    case "doubao-web-search":
+      return "doubao-web-search";
     default:
       return t("keys.enterModelName");
   }
@@ -151,6 +153,8 @@ const upstreamPlaceholder = computed(() => {
       return "https://api.tavily.com";
     case "fengniao":
       return "https://m.riskbird.com/prod-qbb-api";
+    case "doubao-web-search":
+      return "https://open.feedcoopapi.com";
     default:
       return t("keys.enterUpstreamUrl");
   }
@@ -168,6 +172,10 @@ const validationEndpointPlaceholder = computed(() => {
       return ""; // Gemini 不显示此字段
     case "tavily":
       return "/search";
+    case "fengniao":
+      return "/skills/searchHint?key=test";
+    case "doubao-web-search":
+      return "/search_api/web_search";
     default:
       return t("keys.enterValidationPath");
   }
@@ -272,6 +280,8 @@ function getOldDefaultTestModel(channelType: string): string {
       return "tavily";
     case "fengniao":
       return "fengniao";
+    case "doubao-web-search":
+      return "doubao-web-search";
     default:
       return "";
   }
@@ -290,6 +300,8 @@ function getOldDefaultUpstream(channelType: string): string {
       return "https://api.tavily.com";
     case "fengniao":
       return "https://m.riskbird.com/prod-qbb-api";
+    case "doubao-web-search":
+      return "https://open.feedcoopapi.com";
     default:
       return "";
   }
@@ -561,7 +573,7 @@ async function handleSubmit() {
           action: rule.action,
         })),
       proxy_keys: formData.proxy_keys,
-      mcp_enabled: (formData.channel_type === "tavily" || formData.channel_type === "fengniao") ? formData.mcp_enabled : false,
+      mcp_enabled: ["tavily", "fengniao", "doubao-web-search"].includes(formData.channel_type) ? formData.mcp_enabled : false,
     };
 
     let res: Group;
@@ -774,7 +786,7 @@ async function handleSubmit() {
           </n-form-item>
 
           <!-- MCP开关：仅Tavily/Fengniao渠道显示 -->
-          <n-form-item v-if="formData.channel_type === 'tavily' || formData.channel_type === 'fengniao'" path="mcp_enabled">
+          <n-form-item v-if="['tavily', 'fengniao', 'doubao-web-search'].includes(formData.channel_type)" path="mcp_enabled">
             <template #label>
               <div class="form-label-with-tooltip">
                 {{ t("keys.mcpEnabled") }}

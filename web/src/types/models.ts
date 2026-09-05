@@ -12,7 +12,7 @@ export type KeyStatus = "active" | "invalid" | undefined;
 export type GroupType = "standard" | "aggregate";
 
 // 渠道类型
-export type ChannelType = "openai" | "openai-response" | "gemini" | "anthropic" | "tavily" | "fengniao";
+export type ChannelType = "openai" | "openai-response" | "gemini" | "anthropic" | "tavily" | "fengniao" | "doubao-web-search";
 
 // 数据模型定义
 export interface APIKey {

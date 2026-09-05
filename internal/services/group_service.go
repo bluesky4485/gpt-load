@@ -217,6 +217,8 @@ func (s *GroupService) CreateGroup(ctx context.Context, params GroupCreateParams
 			// Tavily does not require a test model; auto-fill a default for logging purposes.
 			if channelType == "tavily" || channelType == "fengniao" {
 				testModel = "tavily-search"
+			} else if channelType == "doubao-web-search" {
+				testModel = "doubao-web-search"
 			} else {
 				return nil, NewI18nError(app_errors.ErrValidation, "validation.test_model_required", nil)
 			}
@@ -257,6 +259,17 @@ func (s *GroupService) CreateGroup(ctx context.Context, params GroupCreateParams
 			cleanedConfig["failover_status_codes"] = "500"
 		}
 	}
+	if channelType == "doubao-web-search" {
+		if cleanedConfig == nil {
+			cleanedConfig = make(map[string]any)
+		}
+		if _, hasFailover := cleanedConfig["failover_status_codes"]; !hasFailover {
+			// 豆包搜索单 Key 并发上限 5，超限返回 429（限流，需切换 Key 重试）；
+			// 认证失败返回 401；服务端临时故障返回 500。
+			// 月度免费额度耗尽返回 HTTP 200 + ResponseMetadata.Error（QuotaExceeded 等），不依赖状态码触发。
+			cleanedConfig["failover_status_codes"] = "401,429,500"
+		}
+	}
 
 	headerRulesJSON, err := s.normalizeHeaderRules(params.HeaderRules)
 	if err != nil {
@@ -267,7 +280,7 @@ func (s *GroupService) CreateGroup(ctx context.Context, params GroupCreateParams
 	}
 
 	// MCP is only supported for Tavily channel type.
-	if params.MCPEnabled && channelType != "tavily" && channelType != "fengniao" {
+	if params.MCPEnabled && channelType != "tavily" && channelType != "fengniao" && channelType != "doubao-web-search" {
 		return nil, NewI18nError(app_errors.ErrValidation, "validation.mcp_tavily_only", nil)
 	}
 
@@ -535,6 +548,14 @@ func (s *GroupService) UpdateGroup(ctx context.Context, id uint, params GroupUpd
 				cleanedConfig["failover_status_codes"] = "500"
 			}
 		}
+		if group.ChannelType == "doubao-web-search" {
+			if cleanedConfig == nil {
+				cleanedConfig = make(map[string]any)
+			}
+			if _, hasFailover := cleanedConfig["failover_status_codes"]; !hasFailover {
+				cleanedConfig["failover_status_codes"] = "401,429,500"
+			}
+		}
 		group.Config = cleanedConfig
 	}
 
@@ -583,7 +604,7 @@ func (s *GroupService) ToggleMCP(ctx context.Context, id uint, enabled bool) (*m
 		return nil, app_errors.ParseDBError(err)
 	}
 
-	if group.ChannelType != "tavily" && group.ChannelType != "fengniao" && enabled {
+	if group.ChannelType != "tavily" && group.ChannelType != "fengniao" && group.ChannelType != "doubao-web-search" && enabled {
 		return nil, NewI18nError(app_errors.ErrValidation, "validation.mcp_tavily_only", nil)
 	}
 

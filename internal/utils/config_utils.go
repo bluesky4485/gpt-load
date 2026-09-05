@@ -189,6 +189,8 @@ func GetValidationEndpoint(group *models.Group) string {
 		return "/search"
 	case "fengniao":
 		return "/skills/searchHint?key=test"
+	case "doubao-web-search":
+		return "/search_api/web_search"
 	default:
 		return ""
 	}
