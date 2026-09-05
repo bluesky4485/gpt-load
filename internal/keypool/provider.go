@@ -16,6 +16,7 @@ import (
 
 	"github.com/sirupsen/logrus"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type KeyProvider struct {
@@ -68,6 +69,13 @@ func (p *KeyProvider) roundRobinSelect(groupID uint) (*models.APIKey, error) {
 	keyDetails, err := p.store.HGetAll(keyHashKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get key details for key ID %d: %w", keyID, err)
+	}
+
+	// 轮换列表与 hash 偶发不一致（hash 被删但 ID 仍在列表）时，构造出的空 key
+	// 会被当作正常 key 转发并计一次失败。此处自愈：移除残留条目并明确报错。
+	if keyDetails["key_string"] == "" {
+		_ = p.store.LRem(activeKeysListKey, 0, keyID)
+		return nil, fmt.Errorf("%w (key %d missing from store, removed stale entry)", app_errors.ErrNoActiveKeys, keyID)
 	}
 
 	// 3. Manually unmarshal the map into an APIKey struct
@@ -229,10 +237,13 @@ func (p *KeyProvider) executeTransactionWithRetry(operation func(tx *gorm.DB) er
 			return nil
 		}
 
-		if strings.Contains(err.Error(), "database is locked") {
+		// SQLite/MySQL 的锁争用与各数据库的死锁错误（MySQL "Deadlock found"，
+		// PostgreSQL SQLSTATE 40P01）都值得短暂退避后重试
+		lowerErr := strings.ToLower(err.Error())
+		if strings.Contains(lowerErr, "database is locked") || strings.Contains(lowerErr, "deadlock") {
 			jitter := time.Duration(rand.Intn(int(maxJitter)))
 			totalDelay := baseDelay + jitter
-			logrus.Debugf("Database is locked, retrying in %v... (attempt %d/%d)", totalDelay, i+1, maxRetries)
+			logrus.Debugf("Database conflict, retrying in %v... (attempt %d/%d)", totalDelay, i+1, maxRetries)
 			time.Sleep(totalDelay)
 			continue
 		}
@@ -241,6 +252,16 @@ func (p *KeyProvider) executeTransactionWithRetry(operation func(tx *gorm.DB) er
 	}
 
 	return err
+}
+
+// withRowLock appends SELECT ... FOR UPDATE to the query for databases that
+// support it. SQLite serializes writers at the database level and does not
+// parse the FOR UPDATE syntax, so the clause is skipped there.
+func (p *KeyProvider) withRowLock(tx *gorm.DB) *gorm.DB {
+	if tx.Dialector.Name() == "sqlite" {
+		return tx
+	}
+	return tx.Clauses(clause.Locking{Strength: "UPDATE"})
 }
 
 func (p *KeyProvider) handleSuccess(keyID uint, keyHashKey, activeKeysListKey string) error {
@@ -258,7 +279,7 @@ func (p *KeyProvider) handleSuccess(keyID uint, keyHashKey, activeKeysListKey st
 
 	return p.executeTransactionWithRetry(func(tx *gorm.DB) error {
 		var key models.APIKey
-		if err := tx.Set("gorm:query_option", "FOR UPDATE").First(&key, keyID).Error; err != nil {
+		if err := p.withRowLock(tx).First(&key, keyID).Error; err != nil {
 			return fmt.Errorf("failed to lock key %d for update: %w", keyID, err)
 		}
 
@@ -299,18 +320,17 @@ func (p *KeyProvider) handleFailure(apiKey *models.APIKey, group *models.Group, 
 		return nil
 	}
 
-	failureCount, _ := strconv.ParseInt(keyDetails["failure_count"], 10, 64)
-
 	// 获取该分组的有效配置
 	blacklistThreshold := group.EffectiveConfig.BlacklistThreshold
 
 	return p.executeTransactionWithRetry(func(tx *gorm.DB) error {
 		var key models.APIKey
-		if err := tx.Set("gorm:query_option", "FOR UPDATE").First(&key, apiKey.ID).Error; err != nil {
+		if err := p.withRowLock(tx).First(&key, apiKey.ID).Error; err != nil {
 			return fmt.Errorf("failed to lock key %d for update: %w", apiKey.ID, err)
 		}
 
-		newFailureCount := failureCount + 1
+		// 以事务内锁定的行为准递增，避免并发失败时基于过期快照覆盖计数
+		newFailureCount := key.FailureCount + 1
 
 		updates := map[string]any{"failure_count": newFailureCount}
 		shouldBlacklist := blacklistThreshold > 0 && newFailureCount >= int64(blacklistThreshold)
@@ -322,8 +342,9 @@ func (p *KeyProvider) handleFailure(apiKey *models.APIKey, group *models.Group, 
 			return fmt.Errorf("failed to update key stats in DB: %w", err)
 		}
 
-		if _, err := p.store.HIncrBy(keyHashKey, "failure_count", 1); err != nil {
-			return fmt.Errorf("failed to increment failure count in store: %w", err)
+		// Redis 计数与 DB 权威值同步（原 HIncrBy 在并发下会与 DB 漂移）
+		if err := p.store.HSet(keyHashKey, map[string]any{"failure_count": newFailureCount}); err != nil {
+			return fmt.Errorf("failed to update failure count in store: %w", err)
 		}
 
 		if shouldBlacklist {

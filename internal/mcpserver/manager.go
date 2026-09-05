@@ -2,6 +2,9 @@ package mcpserver
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"sync"
@@ -22,6 +25,15 @@ type contextKey string
 // ginContextKey is the context key for the gin.Context, passed through MCP tool handlers.
 const ginContextKey contextKey = "gin-context"
 
+// mcpServerEntry couples a cached MCP server with the group fingerprint it was
+// built from, so stale servers (e.g. after the group's upstreams or channel
+// type changed) are detected and rebuilt on the next request instead of
+// serving requests with a captured, outdated group snapshot.
+type mcpServerEntry struct {
+	srv         *mcpserver.StreamableHTTPServer
+	fingerprint string
+}
+
 // Manager manages per-group MCP servers for tool access.
 // Each MCP-enabled group gets its own MCPServer with channel-specific tools.
 type Manager struct {
@@ -30,7 +42,7 @@ type Manager struct {
 	cacheService *services.CacheService
 
 	mu      sync.RWMutex
-	servers map[string]*mcpserver.StreamableHTTPServer
+	servers map[string]*mcpServerEntry
 }
 
 // NewManager creates a new MCP Manager.
@@ -43,7 +55,7 @@ func NewManager(
 		proxyServer:  proxyServer,
 		groupManager: groupManager,
 		cacheService: cacheService,
-		servers:      make(map[string]*mcpserver.StreamableHTTPServer),
+		servers:      make(map[string]*mcpServerEntry),
 	}
 }
 
@@ -79,31 +91,46 @@ func (m *Manager) Handler(c *gin.Context) {
 	srv.ServeHTTP(c.Writer, reqWithCtx)
 }
 
-// getOrCreateServer returns the cached MCP server for a group, creating one if needed.
+// getOrCreateServer returns the cached MCP server for a group, creating or
+// rebuilding it when the group is new or its configuration fingerprint changed.
 func (m *Manager) getOrCreateServer(group *models.Group) *mcpserver.StreamableHTTPServer {
+	fingerprint := groupFingerprint(group)
+
 	m.mu.RLock()
-	srv, ok := m.servers[group.Name]
+	entry, ok := m.servers[group.Name]
 	m.mu.RUnlock()
-	if ok {
-		return srv
+	if ok && entry.fingerprint == fingerprint {
+		return entry.srv
 	}
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if srv, ok = m.servers[group.Name]; ok {
-		return srv
+	if entry, ok = m.servers[group.Name]; ok && entry.fingerprint == fingerprint {
+		return entry.srv
 	}
 
-	srv = m.buildServer(group)
-	m.servers[group.Name] = srv
+	srv := m.buildServer(group)
+	m.servers[group.Name] = &mcpServerEntry{srv: srv, fingerprint: fingerprint}
 
 	logrus.WithFields(logrus.Fields{
 		"group":        group.Name,
 		"channel_type": group.ChannelType,
+		"rebuilt":      ok, // true when an existing server was replaced due to config change
 	}).Info("MCP server created for group")
 
 	return srv
+}
+
+// groupFingerprint hashes the group fields the MCP tools depend on (name,
+// channel type, upstreams, config overrides). Tool handlers capture the group
+// at build time, so any change to these fields requires a server rebuild.
+func groupFingerprint(group *models.Group) string {
+	configJSON, _ := json.Marshal(group.Config)
+	raw := fmt.Sprintf("%s|%s|%s|%s|%t",
+		group.Name, group.ChannelType, string(group.Upstreams), configJSON, group.MCPEnabled)
+	sum := sha256.Sum256([]byte(raw))
+	return hex.EncodeToString(sum[:])
 }
 
 // buildServer creates a new StreamableHTTPServer for a group with channel-specific tools.
@@ -127,6 +154,8 @@ func (m *Manager) buildServer(group *models.Group) *mcpserver.StreamableHTTPServ
 		m.registerMapTool(mcpSrv, group)
 	case "fengniao":
 		m.registerFengniaoTools(mcpSrv, group)
+	case "doubao-web-search":
+		m.registerDoubaoWebSearchTool(mcpSrv, group)
 	default:
 		logrus.WithField("channel_type", group.ChannelType).Warn("No MCP tools registered for channel type")
 	}

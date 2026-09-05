@@ -86,7 +86,11 @@ func (ch *TavilyChannel) ValidateKey(ctx context.Context, apiKey *models.APIKey,
 
 	// Build final URL with path and query parameters
 	finalURL := *upstreamURL
-	finalURL.Path = strings.TrimRight(finalURL.Path, "/") + endpointURL.Path
+	validationPath := endpointURL.Path
+	if validationPath != "" && !strings.HasPrefix(validationPath, "/") {
+		validationPath = "/" + validationPath
+	}
+	finalURL.Path = strings.TrimRight(finalURL.Path, "/") + validationPath
 	finalURL.RawQuery = endpointURL.RawQuery
 	reqURL := finalURL.String()
 
@@ -145,6 +149,13 @@ func (ch *TavilyChannel) IsCacheable() bool {
 // CacheTTL returns 7 days in seconds — search results have moderate temporal value.
 func (ch *TavilyChannel) CacheTTL() int {
 	return 7 * 24 * 60 * 60 // 7 days
+}
+
+// IsCacheableResponse only caches successful responses. The cache path is
+// normally gated on HTTP 200 already; this guards against future callers
+// passing non-200 responses in.
+func (ch *TavilyChannel) IsCacheableResponse(statusCode int, body []byte) bool {
+	return statusCode == http.StatusOK && len(body) > 0
 }
 
 // --- QuotaAwareChannel implementation ---

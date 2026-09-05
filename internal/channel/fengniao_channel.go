@@ -161,6 +161,23 @@ func (ch *FengniaoChannel) CacheTTL() int {
 	return 30 * 24 * 60 * 60 // 30 days
 }
 
+// IsCacheableResponse only caches real business successes. Fengniao reports
+// errors (quota exhaustion, bad params) inside HTTP 200 bodies, so the response
+// body must carry code=20000 to be cacheable — otherwise errors would be
+// served from cache for up to 30 days.
+func (ch *FengniaoChannel) IsCacheableResponse(statusCode int, body []byte) bool {
+	if statusCode != http.StatusOK || len(body) == 0 {
+		return false
+	}
+	var resp struct {
+		Code int `json:"code"`
+	}
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return false
+	}
+	return resp.Code == 20000
+}
+
 // --- QuotaAwareChannel implementation ---
 
 // GetQuotaConfig returns the quota configuration for Fengniao: daily reset, no usage sync API,

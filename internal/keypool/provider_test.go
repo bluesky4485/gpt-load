@@ -39,11 +39,11 @@ func seedKeys(t *testing.T, db *gorm.DB, keys []models.APIKey) {
 // ---------- TestQuotaPriority ----------
 
 func TestQuotaPriority(t *testing.T) {
-	unlimited := quotaPriority(0, 0)        // 2_000_000_000
-	highQuota := quotaPriority(1000, 500)   // 1_000_000_500
-	lowQuota := quotaPriority(1000, 900)    // 1_000_000_100
-	exhausted := quotaPriority(1000, 1000)  // 0
-	overused := quotaPriority(1000, 1200)   // -200
+	unlimited := quotaPriority(0, 0)       // 2_000_000_000
+	highQuota := quotaPriority(1000, 500)  // 1_000_000_500
+	lowQuota := quotaPriority(1000, 900)   // 1_000_000_100
+	exhausted := quotaPriority(1000, 1000) // 0
+	overused := quotaPriority(1000, 1200)  // -200
 
 	t.Logf("priorities: unlimited=%d, highQuota=%d, lowQuota=%d, exhausted=%d, overused=%d",
 		unlimited, highQuota, lowQuota, exhausted, overused)
@@ -122,7 +122,7 @@ func TestQuotaFirstSelect_UnlimitedPreferred(t *testing.T) {
 
 	seedKeys(t, db, []models.APIKey{
 		{KeyValue: "key-high-quota", GroupID: 1, Status: models.KeyStatusActive, TotalQuota: 10000, UsedQuota: 0}, // remaining=10000
-		{KeyValue: "key-unlimited", GroupID: 1, Status: models.KeyStatusActive, TotalQuota: 0, UsedQuota: 0},     // unlimited
+		{KeyValue: "key-unlimited", GroupID: 1, Status: models.KeyStatusActive, TotalQuota: 0, UsedQuota: 0},      // unlimited
 		{KeyValue: "key-low-quota", GroupID: 1, Status: models.KeyStatusActive, TotalQuota: 100, UsedQuota: 10},   // remaining=90
 	})
 

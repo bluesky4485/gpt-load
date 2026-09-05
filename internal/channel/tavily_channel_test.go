@@ -87,5 +87,5 @@ func TestTavilyChannel_ExtractModel(t *testing.T) {
 type testResponseWriter struct{}
 
 func (w *testResponseWriter) Header() http.Header         { return http.Header{} }
-func (w *testResponseWriter) Write(b []byte) (int, error)  { return len(b), nil }
-func (w *testResponseWriter) WriteHeader(statusCode int)   {}
+func (w *testResponseWriter) Write(b []byte) (int, error) { return len(b), nil }
+func (w *testResponseWriter) WriteHeader(statusCode int)  {}

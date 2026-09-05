@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"path"
+	"strings"
 	"time"
 
 	"gpt-load/internal/channel"
@@ -122,10 +122,13 @@ func (ps *ProxyServer) HandleProxy(c *gin.Context) {
 
 	isStream := channelHandler.IsStreamRequest(c, bodyBytes)
 
-	// Cache check for Tavily groups (skip for streaming requests).
+	// Cache check for cacheable channels (skip for streaming requests).
+	// The key includes group ID, method, endpoint (path + query) and body, so
+	// GET-based channels like Fengniao are cacheable and different groups
+	// (different upstream accounts) never share entries.
 	if channel.IsCacheable(channelHandler) && !isStream && ps.cacheService != nil {
-		endpoint := extractEndpoint(c.Request.URL.Path)
-		if cacheKey, err := models.GenerateCacheKey(endpoint, finalBodyBytes); err == nil {
+		endpoint := cacheEndpoint(c.Request, groupName)
+		if cacheKey, err := models.GenerateCacheKey(group.ID, c.Request.Method, endpoint, finalBodyBytes); err == nil {
 			if cached := ps.cacheService.Get(cacheKey); cached != nil {
 				logrus.WithFields(logrus.Fields{
 					"group":    group.Name,
@@ -164,6 +167,8 @@ func (ps *ProxyServer) executeRequestWithRetry(
 
 	upstreamURL, err := channelHandler.BuildUpstreamURL(c.Request.URL, originalGroup.Name)
 	if err != nil {
+		// 记录日志，避免这类请求在监控中完全不可见
+		ps.logRequest(c, originalGroup, group, apiKey, startTime, http.StatusInternalServerError, err, isStream, "", channelHandler, bodyBytes, models.RequestTypeFinal)
 		response.Error(c, app_errors.NewAPIError(app_errors.ErrInternalServer, fmt.Sprintf("Failed to build upstream URL: %v", err)))
 		return
 	}
@@ -323,8 +328,8 @@ func (ps *ProxyServer) executeRequestWithRetry(
 		if isStream {
 			ps.handleStreamingResponse(c, resp)
 		} else if channel.IsCacheable(channelHandler) && ps.cacheService != nil && resp.StatusCode == http.StatusOK {
-			// Cache-eligible Tavily response: capture body, cache it, then send to client.
-			ps.handleCacheableResponse(c, resp, group, finalBodyBytes)
+			// Cache-eligible response: capture body, cache it, then send to client.
+			ps.handleCacheableResponse(c, resp, originalGroup, group, apiKey, channelHandler, finalBodyBytes)
 		} else {
 			ps.handleNormalResponse(c, resp)
 		}
@@ -333,14 +338,22 @@ func (ps *ProxyServer) executeRequestWithRetry(
 	ps.logRequest(c, originalGroup, group, apiKey, startTime, resp.StatusCode, nil, isStream, upstreamURL, channelHandler, bodyBytes, models.RequestTypeFinal)
 }
 
-// extractEndpoint extracts the API endpoint name (last path segment) from a URL path.
-// e.g., "/v0/search" → "search", "/v1/extract" → "extract".
-func extractEndpoint(urlPath string) string {
-	base := path.Base(urlPath)
-	if base == "." || base == "/" {
-		return "unknown"
+// cacheEndpoint builds the cache-key endpoint component from a proxy request:
+// the full upstream path (request path minus the /proxy/<group>/ prefix) plus
+// the raw query string. Using the full path — not just the last segment — keeps
+// the HTTP and MCP cache identities identical, e.g. the HTTP request
+// "/proxy/g/search_api/web_search" and the MCP endpoint "search_api/web_search"
+// share one cache entry. GenerateCacheKey normalizes both sides further.
+// The proxy auth middleware has already stripped the ?key= credential for
+// non-Fengniao channels, so the remaining query contains business parameters only.
+func cacheEndpoint(req *http.Request, groupName string) string {
+	prefix := "/proxy/" + groupName + "/"
+	endpoint := strings.TrimPrefix(req.URL.Path, prefix)
+	endpoint = strings.TrimLeft(endpoint, "/")
+	if req.URL.RawQuery != "" {
+		endpoint += "?" + req.URL.RawQuery
 	}
-	return base
+	return endpoint
 }
 
 func shouldFailoverOnStatusCode(statusCode int, group *models.Group) bool {

@@ -88,6 +88,26 @@ func IsCacheable(ch ChannelProxy) bool {
 	return false
 }
 
+// ResponseCacheValidator is an optional interface for CacheableChannel
+// implementations whose errors ride on HTTP 200 responses with a business-level
+// status code inside the body (e.g. Fengniao returns HTTP 200 with {"code":9999}
+// on quota exhaustion). Implementing it lets a channel veto caching of
+// responses that are not real successes, preventing cache poisoning.
+type ResponseCacheValidator interface {
+	// IsCacheableResponse reports whether the response should be stored in the cache.
+	IsCacheableResponse(statusCode int, body []byte) bool
+}
+
+// IsCacheableResponse is a helper that checks with the channel whether a
+// response is eligible for caching. Channels that do not implement
+// ResponseCacheValidator cache any response handed to the cache path.
+func IsCacheableResponse(ch ChannelProxy, statusCode int, body []byte) bool {
+	if v, ok := ch.(ResponseCacheValidator); ok {
+		return v.IsCacheableResponse(statusCode, body)
+	}
+	return true
+}
+
 // GetCacheTTL is a helper that returns the cache TTL for a ChannelProxy (0 if not cacheable).
 func GetCacheTTL(ch ChannelProxy) int {
 	if cc, ok := ch.(CacheableChannel); ok {

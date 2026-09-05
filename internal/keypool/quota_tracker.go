@@ -10,8 +10,9 @@ import (
 	"gpt-load/internal/models"
 	"io"
 	"net/http"
+	"net/url"
+	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/sirupsen/logrus"
@@ -31,7 +32,6 @@ type QuotaTracker struct {
 	httpClient      *http.Client
 	stopChan        chan struct{}
 	wg              sync.WaitGroup
-	running         atomic.Bool
 }
 
 // Sync configuration for the worker pool used in syncAllKeys.
@@ -77,15 +77,24 @@ func (qt *QuotaTracker) IncrementUsed(keyID uint) {
 // --- Layer 4: Passive exhaustion detection ---
 
 // MarkExhausted sets used_quota = total_quota when exhaustion is detected.
+// Keys without a configured total_quota cannot record exhaustion numerically;
+// a warning is logged so operators know to configure total_quota.
 func (qt *QuotaTracker) MarkExhausted(keyID uint) {
 	go func() {
-		err := qt.db.Model(&models.APIKey{}).Where("id = ?", keyID).
-			Update("used_quota", gorm.Expr("total_quota")).Error
-		if err != nil {
+		result := qt.db.Model(&models.APIKey{}).
+			Where("id = ? AND total_quota > 0", keyID).
+			Update("used_quota", gorm.Expr("total_quota"))
+		if result.Error != nil {
 			logrus.WithFields(logrus.Fields{
 				"keyID": keyID,
-				"error": err,
+				"error": result.Error,
 			}).Error("QuotaTracker: Failed to mark key as exhausted")
+			return
+		}
+		if result.RowsAffected == 0 {
+			logrus.WithField("keyID", keyID).
+				Warn("QuotaTracker: Exhaustion detected but key has no total_quota configured; set total_quota on the key to enable passive exhaustion handling")
+			return
 		}
 		logrus.WithField("keyID", keyID).Warn("QuotaTracker: Key marked as exhausted")
 	}()
@@ -107,9 +116,15 @@ type tavilyUsageResponse struct {
 // SyncKey calls the upstream /usage API and syncs the authoritative usage numbers.
 // Currently only Tavily provides a /usage endpoint.
 func (qt *QuotaTracker) SyncKey(ctx context.Context, keyID uint, keyValue string, upstreamURL string) error {
-	url := upstreamURL + "/usage"
+	// 用 URL 解析拼接路径，避免上游地址带尾斜杠时产生 //usage
+	base, err := url.Parse(upstreamURL)
+	if err != nil {
+		return fmt.Errorf("invalid upstream URL %q: %w", upstreamURL, err)
+	}
+	base.Path = strings.TrimRight(base.Path, "/") + "/usage"
+	usageURL := base.String()
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, usageURL, nil)
 	if err != nil {
 		return fmt.Errorf("failed to create usage request: %w", err)
 	}
@@ -266,6 +281,9 @@ func (qt *QuotaTracker) Stop(ctx context.Context) {
 }
 
 // syncLoop periodically syncs usage data for all groups with SyncAvailable channels.
+// The sync runs inline in this goroutine: a full cycle is bounded by its own
+// context timeout, and blocking the ticker here avoids unsynchronized access
+// to lastRun from multiple goroutines.
 func (qt *QuotaTracker) syncLoop() {
 	defer qt.wg.Done()
 
@@ -281,18 +299,11 @@ func (qt *QuotaTracker) syncLoop() {
 		case <-qt.stopChan:
 			return
 		case <-ticker.C:
-			if qt.running.Load() {
-				continue
-			}
 			if time.Since(lastRun) < syncInterval {
 				continue
 			}
-			qt.running.Store(true)
-			go func() {
-				defer qt.running.Store(false)
-				qt.syncAllKeys()
-				lastRun = time.Now()
-			}()
+			lastRun = time.Now()
+			qt.syncAllKeys()
 		}
 	}
 }

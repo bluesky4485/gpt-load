@@ -52,27 +52,38 @@ func (ps *ProxyServer) handleNormalResponse(c *gin.Context, resp *http.Response)
 }
 
 // handleCacheableResponse reads the full response body, caches it, and writes it to the client.
-// Used for Tavily non-stream successful responses to enable search caching.
-func (ps *ProxyServer) handleCacheableResponse(c *gin.Context, resp *http.Response, group *models.Group, requestBody []byte) {
+// Used for cacheable-channel successful responses (e.g. Tavily / Fengniao / Doubao).
+func (ps *ProxyServer) handleCacheableResponse(c *gin.Context, resp *http.Response, originalGroup, group *models.Group, apiKey *models.APIKey, channelHandler channel.ChannelProxy, requestBody []byte) {
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		logrus.WithError(err).Error("Failed to read response body for caching")
-		c.Writer.Write(nil)
+		logUpstreamError("reading response body for caching", err)
+		c.Status(resp.StatusCode)
 		return
 	}
 
-	// Cache the response.
-	endpoint := extractEndpoint(c.Request.URL.Path)
-	if cacheKey, err := models.GenerateCacheKey(endpoint, requestBody); err == nil {
-		if putErr := ps.cacheService.Put(cacheKey, group.ID, endpoint, string(body), resp.StatusCode, ps.cacheService.GetTTLForGroup(group.ID)); putErr != nil {
-			logrus.WithFields(logrus.Fields{
-				"group":    group.Name,
-				"endpoint": endpoint,
-				"error":    putErr,
-			}).Warn("Failed to cache response")
+	// 成功路径的被动耗尽检测：风鸟/豆包等渠道把额度错误承载在 HTTP 200 响应体中，
+	// 不会进入失败/重试分支，必须在这里补检一次（MarkExhausted 会封顶 used_quota，
+	// 纠正此前对失败请求的 IncrementUsed 计数）。
+	if channel.IsQuotaExhausted(channelHandler, resp.StatusCode, body) && ps.quotaTracker != nil {
+		ps.quotaTracker.MarkExhausted(apiKey.ID)
+	}
+
+	// Only cache responses the channel considers a real business success —
+	// e.g. Fengniao/Doubao report errors inside HTTP 200 bodies.
+	if channel.IsCacheableResponse(channelHandler, resp.StatusCode, body) {
+		endpoint := cacheEndpoint(c.Request, originalGroup.Name)
+		if cacheKey, err := models.GenerateCacheKey(group.ID, c.Request.Method, endpoint, requestBody); err == nil {
+			if putErr := ps.cacheService.Put(cacheKey, group.ID, endpoint, string(body), resp.StatusCode, ps.cacheService.GetTTLForGroup(group.ID)); putErr != nil {
+				logrus.WithFields(logrus.Fields{
+					"group":    group.Name,
+					"endpoint": endpoint,
+					"error":    putErr,
+				}).Warn("Failed to cache response")
+			}
 		}
 	}
 
+	c.Status(resp.StatusCode)
 	c.Writer.Write(body)
 }
 

@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	app_errors "gpt-load/internal/errors"
 	"gpt-load/internal/channel"
+	app_errors "gpt-load/internal/errors"
 	"gpt-load/internal/models"
 	"gpt-load/internal/utils"
 
@@ -57,9 +57,15 @@ func (ps *ProxyServer) Execute(ctx context.Context, proxyReq *ProxyRequest) (*Pr
 		return nil, fmt.Errorf("failed to apply parameter overrides: %w", err)
 	}
 
-	// 3. Check cache (Tavily only).
+	method := proxyReq.Method
+	if method == "" {
+		method = http.MethodPost
+	}
+
+	// 3. Check cache (Tavily / Fengniao). The key includes the group ID, method,
+	// endpoint (path + query) and body so GET-based channels are cacheable too.
 	if channel.IsCacheable(channelHandler) && ps.cacheService != nil {
-		if cacheKey, cacheErr := models.GenerateCacheKey(proxyReq.Endpoint, finalBody); cacheErr == nil {
+		if cacheKey, cacheErr := models.GenerateCacheKey(group.ID, method, proxyReq.Endpoint, finalBody); cacheErr == nil {
 			if cached := ps.cacheService.Get(cacheKey); cached != nil {
 				logrus.WithFields(logrus.Fields{
 					"group":    group.Name,
@@ -81,10 +87,6 @@ func (ps *ProxyServer) Execute(ctx context.Context, proxyReq *ProxyRequest) (*Pr
 	}
 
 	// 4. Execute with retry.
-	method := proxyReq.Method
-	if method == "" {
-		method = http.MethodPost
-	}
 	return ps.executeProxy(ctx, channelHandler, group, finalBody, proxyReq.Endpoint, method, proxyReq.GinContext, startTime, 0)
 }
 
@@ -183,7 +185,10 @@ func (ps *ProxyServer) executeProxy(
 		if err != nil {
 			logrus.Debugf("MCP proxy request failed (attempt %d/%d) for key %s: %v",
 				retryCount+1, cfg.MaxRetries, utils.MaskAPIKey(apiKey.KeyValue), err)
-			ps.keyProvider.UpdateStatus(apiKey, group, false, err.Error())
+			// 传输层错误（*url.Error）会带上完整上游 URL，风鸟等渠道把真实 key
+			// 放在 URL query 中，返回客户端/落库/更新 key 状态前必须脱敏
+			redactedErr := utils.RedactSecret(err.Error(), apiKey.KeyValue)
+			ps.keyProvider.UpdateStatus(apiKey, group, false, redactedErr)
 
 			isLastAttempt := retryCount >= cfg.MaxRetries
 			requestType := models.RequestTypeRetry
@@ -193,7 +198,7 @@ func (ps *ProxyServer) executeProxy(
 			ps.logMCPRequest(ginCtx, group, apiKey, startTime, 500, err, false, upstreamURL, endpoint, bodyBytes, requestType)
 
 			if isLastAttempt {
-				return nil, fmt.Errorf("upstream request failed after %d attempts: %w", retryCount+1, err)
+				return nil, fmt.Errorf("upstream request failed after %d attempts: %s", retryCount+1, redactedErr)
 			}
 			return ps.executeProxy(ctx, channelHandler, group, bodyBytes, endpoint, method, ginCtx, startTime, retryCount+1)
 		}
@@ -238,23 +243,32 @@ func (ps *ProxyServer) executeProxy(
 	logrus.Debugf("MCP proxy for group %s succeeded on attempt %d with key %s",
 		group.Name, retryCount+1, utils.MaskAPIKey(apiKey.KeyValue))
 
-	// Increment quota usage for Tavily groups.
-	if channel.IsQuotaManaged(channelHandler) && ps.quotaTracker != nil {
-		ps.quotaTracker.IncrementUsed(apiKey.ID)
-	}
-
 	// Read response body.
 	respBody, readErr := io.ReadAll(resp.Body)
 	if readErr != nil {
 		return nil, fmt.Errorf("failed to read response body: %w", readErr)
 	}
 
+	// 成功路径的被动耗尽检测：风鸟/豆包把额度错误承载在 HTTP 200 响应体中，
+	// 不会进入上面的失败/重试分支，必须在这里补检一次。
+	exhausted := channel.IsQuotaExhausted(channelHandler, resp.StatusCode, respBody)
+	if exhausted && ps.quotaTracker != nil {
+		ps.quotaTracker.MarkExhausted(apiKey.ID)
+	}
+
+	// Increment quota usage only for real successes (quota-managed channels).
+	if !exhausted && channel.IsQuotaManaged(channelHandler) && ps.quotaTracker != nil {
+		ps.quotaTracker.IncrementUsed(apiKey.ID)
+	}
+
 	// Log successful request.
 	ps.logMCPRequest(ginCtx, group, apiKey, startTime, resp.StatusCode, nil, false, upstreamURL, endpoint, bodyBytes, models.RequestTypeFinal)
 
-	// Cache successful Tavily responses.
-	if channel.IsCacheable(channelHandler) && ps.cacheService != nil && resp.StatusCode == http.StatusOK {
-		if cacheKey, cacheErr := models.GenerateCacheKey(endpoint, bodyBytes); cacheErr == nil {
+	// Cache successful cacheable-channel responses, but only real business
+	// successes — e.g. Fengniao reports errors inside HTTP 200 bodies.
+	if channel.IsCacheable(channelHandler) && ps.cacheService != nil && resp.StatusCode == http.StatusOK &&
+		channel.IsCacheableResponse(channelHandler, resp.StatusCode, respBody) {
+		if cacheKey, cacheErr := models.GenerateCacheKey(group.ID, method, endpoint, bodyBytes); cacheErr == nil {
 			if putErr := ps.cacheService.Put(cacheKey, group.ID, endpoint, string(respBody), resp.StatusCode, ps.cacheService.GetTTLForGroup(group.ID)); putErr != nil {
 				logrus.WithFields(logrus.Fields{
 					"group":    group.Name,
@@ -330,7 +344,11 @@ func (ps *ProxyServer) logMCPRequest(
 	}
 
 	if finalError != nil {
-		logEntry.ErrorMessage = finalError.Error()
+		errMsg := finalError.Error()
+		if apiKey != nil {
+			errMsg = utils.RedactSecret(errMsg, apiKey.KeyValue)
+		}
+		logEntry.ErrorMessage = errMsg
 	}
 
 	if err := ps.requestLogService.Record(logEntry); err != nil {
