@@ -81,6 +81,7 @@ var MessagesJaJP = map[string]string{
 	"validation.reorder_sort_negative":  "並び順の値は負数にできません",
 	"validation.reorder_duplicate_group": "並び替え項目に重複したグループIDがあります: {{.id}}",
 	"validation.reorder_group_not_found": "並び替え項目に存在しないグループが含まれています",
+	"validation.mcp_tavily_only":        "MCP は検索系チャネル（Tavily / 風鳥 / 豆包検索 / Exa）のみサポートしています",
 
 	// Task related
 	"task.validation_started": "キー検証タスクが開始されました",

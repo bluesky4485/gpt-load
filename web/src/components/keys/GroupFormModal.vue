@@ -135,6 +135,8 @@ const testModelPlaceholder = computed(() => {
       return "fengniao";
     case "doubao-web-search":
       return "doubao-web-search";
+    case "exa":
+      return "exa";
     default:
       return t("keys.enterModelName");
   }
@@ -155,6 +157,8 @@ const upstreamPlaceholder = computed(() => {
       return "https://m.riskbird.com/prod-qbb-api";
     case "doubao-web-search":
       return "https://open.feedcoopapi.com";
+    case "exa":
+      return "https://api.exa.ai";
     default:
       return t("keys.enterUpstreamUrl");
   }
@@ -176,6 +180,8 @@ const validationEndpointPlaceholder = computed(() => {
       return "/skills/searchHint?key=test";
     case "doubao-web-search":
       return "/search_api/web_search";
+    case "exa":
+      return "/search";
     default:
       return t("keys.enterValidationPath");
   }

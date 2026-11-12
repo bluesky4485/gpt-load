@@ -156,6 +156,8 @@ func (m *Manager) buildServer(group *models.Group) *mcpserver.StreamableHTTPServ
 		m.registerFengniaoTools(mcpSrv, group)
 	case "doubao-web-search":
 		m.registerDoubaoWebSearchTool(mcpSrv, group)
+	case "exa":
+		m.registerExaTools(mcpSrv, group)
 	default:
 		logrus.WithField("channel_type", group.ChannelType).Warn("No MCP tools registered for channel type")
 	}

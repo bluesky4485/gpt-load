@@ -81,6 +81,7 @@ var MessagesZhCN = map[string]string{
 	"validation.reorder_sort_negative":  "排序值不能为负数",
 	"validation.reorder_duplicate_group": "排序项中存在重复分组ID: {{.id}}",
 	"validation.reorder_group_not_found": "排序项包含不存在的分组",
+	"validation.mcp_tavily_only":        "MCP 仅支持搜索类渠道（Tavily / 风鸟 / 豆包搜索 / Exa）",
 
 	// Task related
 	"task.validation_started": "密钥验证任务已开始",

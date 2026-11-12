@@ -81,6 +81,7 @@ var MessagesEnUS = map[string]string{
 	"validation.reorder_sort_negative":  "Sort value cannot be negative",
 	"validation.reorder_duplicate_group": "Duplicate group ID in reorder items: {{.id}}",
 	"validation.reorder_group_not_found": "Reorder items contain non-existent group",
+	"validation.mcp_tavily_only":        "MCP is only supported for search channel types (Tavily / Fengniao / Doubao Web Search / Exa)",
 
 	// Task related
 	"task.validation_started": "Key validation task started",
