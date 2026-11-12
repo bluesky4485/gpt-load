@@ -453,13 +453,12 @@ function handleDragEnd() {
 </template>
 
 <style scoped>
-:deep(.n-card__content) {
+/* naive-ui Card 内容区类名是 n-card-content（非 BEM 双下划线），必须用 flex 列
+   让 .groups-section 的 flex:1 高度约束生效，否则列表会撑破卡片高度 */
+:deep(.n-card-content) {
   height: 100%;
-}
-
-.groups-section::-webkit-scrollbar {
-  width: 1px;
-  height: 1px;
+  display: flex;
+  flex-direction: column;
 }
 
 .group-list-container {
@@ -480,12 +479,13 @@ function handleDragEnd() {
 
 .search-section {
   height: 41px;
+  flex-shrink: 0;
 }
 
 .groups-section {
-  flex: 1;
-  height: calc(100% - 120px);
-  overflow: auto;
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .empty-container {
@@ -496,8 +496,6 @@ function handleDragEnd() {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  max-height: 100%;
-  overflow-y: auto;
   width: 100%;
 }
 
@@ -673,23 +671,24 @@ function handleDragEnd() {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  flex-shrink: 0;
 }
 
 /* 滚动条样式 */
-.groups-list::-webkit-scrollbar {
+.groups-section::-webkit-scrollbar {
   width: 4px;
 }
 
-.groups-list::-webkit-scrollbar-track {
+.groups-section::-webkit-scrollbar-track {
   background: transparent;
 }
 
-.groups-list::-webkit-scrollbar-thumb {
+.groups-section::-webkit-scrollbar-thumb {
   background: var(--scrollbar-bg);
   border-radius: 2px;
 }
 
-.groups-list::-webkit-scrollbar-thumb:hover {
+.groups-section::-webkit-scrollbar-thumb:hover {
   background: var(--border-color);
 }
 
