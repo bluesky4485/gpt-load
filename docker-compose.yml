@@ -1,6 +1,6 @@
 services:
   gpt-load:
-    image: ghcr.io/tbphp/gpt-load:latest
+    image: kolehank/gpt-load:latest
     # build:
     #   context: .
     #   dockerfile: Dockerfile

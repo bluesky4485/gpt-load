@@ -2,11 +2,9 @@
 import { versionService, type VersionInfo } from "@/services/version";
 import {
   BugOutline,
-  ChatbubbleOutline,
   CheckmarkCircleOutline,
   DocumentTextOutline,
   LogoGithub,
-  PeopleOutline,
   TimeOutline,
   WarningOutline,
 } from "@vicons/ionicons5";
@@ -92,7 +90,7 @@ onMounted(() => {
       <!-- 主要信息区 -->
       <div class="footer-main">
         <span class="project-info">
-          <a href="https://github.com/tbphp/gpt-load" target="_blank" rel="noopener noreferrer">
+          <a href="https://github.com/bluesky4485/gpt-load" target="_blank" rel="noopener noreferrer">
             <b>GPT-Load</b>
           </a>
         </span>
@@ -135,7 +133,7 @@ onMounted(() => {
           <n-tooltip trigger="hover" placement="top">
             <template #trigger>
               <a
-                href="https://www.gpt-load.com/docs"
+                href="https://github.com/bluesky4485/gpt-load#readme"
                 target="_blank"
                 rel="noopener noreferrer"
                 class="footer-link"
@@ -150,7 +148,7 @@ onMounted(() => {
           <n-tooltip trigger="hover" placement="top">
             <template #trigger>
               <a
-                href="https://github.com/tbphp/gpt-load"
+                href="https://github.com/bluesky4485/gpt-load"
                 target="_blank"
                 rel="noopener noreferrer"
                 class="footer-link"
@@ -165,7 +163,7 @@ onMounted(() => {
           <n-tooltip trigger="hover" placement="top">
             <template #trigger>
               <a
-                href="https://github.com/tbphp/gpt-load/issues"
+                href="https://github.com/bluesky4485/gpt-load/issues"
                 target="_blank"
                 rel="noopener noreferrer"
                 class="footer-link"
@@ -177,52 +175,14 @@ onMounted(() => {
             {{ t("footer.reportIssue") }}
           </n-tooltip>
 
-          <n-tooltip trigger="hover" placement="top">
-            <template #trigger>
-              <a
-                href="https://github.com/tbphp/gpt-load/graphs/contributors"
-                target="_blank"
-                rel="noopener noreferrer"
-                class="footer-link"
-              >
-                <n-icon :component="PeopleOutline" :size="14" class="link-icon" />
-                <span>{{ t("footer.contributors") }}</span>
-              </a>
-            </template>
-            {{ t("footer.viewContributors") }}
-          </n-tooltip>
 
-          <n-tooltip trigger="hover" placement="top">
-            <template #trigger>
-              <a
-                href="https://t.me/+GHpy5SwEllg3MTUx"
-                target="_blank"
-                rel="noopener noreferrer"
-                class="footer-link"
-              >
-                <n-icon :component="ChatbubbleOutline" :size="14" class="link-icon" />
-                <span>Telegram</span>
-              </a>
-            </template>
-            {{ t("footer.joinGroup") }}
-          </n-tooltip>
         </div>
 
         <n-divider vertical />
 
         <!-- 版权信息 -->
         <div class="copyright-container">
-          <span class="copyright-text">
-            © 2025 by
-            <a
-              href="https://github.com/tbphp"
-              target="_blank"
-              rel="noopener noreferrer"
-              class="author-link"
-            >
-              tbphp
-            </a>
-          </span>
+          <span class="copyright-text">GPT-Load</span>
           <span class="license-text">MIT License</span>
         </div>
       </div>

@@ -2,16 +2,14 @@
 
 English | [中文](README_CN.md) | [日本語](README_JP.md)
 
-[![Release](https://img.shields.io/github/v/release/tbphp/gpt-load)](https://github.com/tbphp/gpt-load/releases)
+[![Release](https://img.shields.io/github/v/release/bluesky4485/gpt-load)](https://github.com/bluesky4485/gpt-load/releases)
 ![Go Version](https://img.shields.io/badge/Go-1.24+-blue.svg)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
 A high-performance, enterprise-grade AI API transparent proxy service designed specifically for enterprises and developers who need to integrate multiple AI services. Built with Go, featuring intelligent key management, load balancing, and comprehensive monitoring capabilities, designed for high-concurrency production environments.
 
-For detailed documentation, please visit [Official Documentation](https://www.gpt-load.com/docs?lang=en)
+See this README for full documentation. For questions or issues, please use [GitHub Issues](https://github.com/bluesky4485/gpt-load/issues).
 
-<a href="https://trendshift.io/repositories/14880" target="_blank"><img src="https://trendshift.io/api/badge/repositories/14880" alt="tbphp%2Fgpt-load | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
-<a href="https://hellogithub.com/repository/tbphp/gpt-load" target="_blank"><img src="https://api.hellogithub.com/v1/widgets/recommend.svg?rid=554dc4c46eb14092b9b0c56f1eb9021c&claim_uid=Qlh8vzrWJ0HCneG" alt="Featured｜HelloGitHub" style="width: 250px; height: 54px;" width="250" height="54" /></a>
 
 ## Features
 
@@ -56,7 +54,7 @@ docker run -d --name gpt-load \
     -p 3001:3001 \
     -e AUTH_KEY=your-secure-key-here \
     -v "$(pwd)/data":/app/data \
-    ghcr.io/tbphp/gpt-load:latest
+    kolehank/gpt-load:latest
 ```
 
 > Please change `your-secure-key-here` to a strong password (never use the default value), then you can log in to the management interface: <http://localhost:3001>
@@ -70,8 +68,8 @@ docker run -d --name gpt-load \
 mkdir -p gpt-load && cd gpt-load
 
 # Download configuration files
-wget https://raw.githubusercontent.com/tbphp/gpt-load/refs/heads/main/docker-compose.yml
-wget -O .env https://raw.githubusercontent.com/tbphp/gpt-load/refs/heads/main/.env.example
+wget https://raw.githubusercontent.com/bluesky4485/gpt-load/refs/heads/main/docker-compose.yml
+wget -O .env https://raw.githubusercontent.com/bluesky4485/gpt-load/refs/heads/main/.env.example
 
 # Edit the .env file and change AUTH_KEY to a strong password. Never use default or simple keys like sk-123456.
 
@@ -114,7 +112,7 @@ Source build requires a locally installed database (SQLite, MySQL, or PostgreSQL
 
 ```bash
 # Clone and build
-git clone https://github.com/tbphp/gpt-load.git
+git clone https://github.com/bluesky4485/gpt-load.git
 cd gpt-load
 go mod tidy
 
@@ -145,7 +143,7 @@ Cluster deployment requires all nodes to connect to the same MySQL (or PostgreSQ
 - All nodes must configure identical `AUTH_KEY`, `DATABASE_DSN`, `REDIS_DSN`
 - Leader-follower architecture where follower nodes must configure environment variable: `IS_SLAVE=true`
 
-For details, please refer to [Cluster Deployment Documentation](https://www.gpt-load.com/docs/cluster?lang=en)
+Cluster deployment requires all nodes to share the same database and Redis, as described above.
 
 ## Configuration System
 
@@ -847,43 +845,10 @@ Enable these settings in your group configuration (applies to both Tavily and Fe
 
 For more details, see [Tavily API Documentation](https://docs.tavily.com/) and [MCP Specification](https://modelcontextprotocol.io/).
 
-## Related Projects
-
-- **[New API](https://github.com/QuantumNous/new-api)** - Excellent AI model aggregation management and distribution system
-
 ## Contributing
 
-Thanks to all the developers who have contributed to GPT-Load!
-
-[![Contributors](https://contrib.rocks/image?repo=tbphp/gpt-load)](https://github.com/tbphp/gpt-load/graphs/contributors)
-
-## Sponsors
-
-<table>
-<tbody>
-<tr>
-<td width="180"><a href="https://unity2.ai/register?source=gptload"><img src="./screenshot/unity2ai.jpg" alt="Unity2.ai" width="150"></a></td>
-<td>Thanks to Unity2.ai for sponsoring this project! Unity2.ai is a high-performance AI model API relay platform for individual developers, teams, and enterprises. It has long served leading enterprises in China, handles over 30 billion token calls per day, and supports 5000 RPM high concurrency. It supports balance billing, first top-up bonuses, bundled subscriptions, enterprise invoicing, and dedicated integration support. Register via <a href="https://unity2.ai/register?source=gptload">this link</a> to receive a $2 balance; join the official group for another $10 balance, up to $12 in free credits.</td>
-</tr>
-<tr>
-<td width="180"><a href="https://linux.do"><img src="./screenshot/l.png" alt="LINUX DO" width="150"></a></td>
-<td>Thank you very much for the support from the LINUX DO community!</td>
-</tr>
-<tr>
-<td width="180"><a href="https://teamorouter.com/?ref=gptload"><img src="./screenshot/teamorouter.png" alt="TeamoRouter" width="150"></a></td>
-<td>Thanks to TeamoRouter for sponsoring this project! TeamoRouter provides intelligent traffic routing for AI APIs, helping developers optimize multi-provider AI workloads with automatic failover, load balancing, and cost optimization.</td>
-</tr>
-<tr>
-<td width="180"><a href="https://www.digitalocean.com/?refcode=3d52cff21342&utm_campaign=Referral_Invite&utm_medium=Referral_Program&utm_source=badge"><img src="https://web-platforms.sfo2.cdn.digitaloceanspaces.com/WWW/Badge%202.svg" alt="DigitalOcean Referral Badge" width="150"></a></td>
-<td>This project is supported by DigitalOcean.</td>
-</tr>
-</tbody>
-</table>
+Issues and pull requests are welcome! This is an independently maintained fork of the original [GPT-Load](https://github.com/tbphp/gpt-load) (which has moved on to a 2.0 rewrite). This fork continues the 1.x line with its own release series.
 
 ## License
 
-MIT License - see [LICENSE](LICENSE) file for details.
-
-## Star History
-
-[![Stargazers over time](https://starchart.cc/tbphp/gpt-load.svg?variant=adaptive)](https://starchart.cc/tbphp/gpt-load)
+MIT License - see [LICENSE](LICENSE) file for details. Copyright of the original upstream authors is acknowledged.

@@ -148,10 +148,10 @@ git push origin main
 在 README.md 中添加徽章：
 
 ```markdown
-[![Docker Image](https://github.com/tbphp/gpt-load/actions/workflows/docker-build.yml/badge.svg)](https://github.com/tbphp/gpt-load/actions/workflows/docker-build.yml)
+[![Docker Image](https://github.com/bluesky4485/gpt-load/actions/workflows/docker-build.yml/badge.svg)](https://github.com/bluesky4485/gpt-load/actions/workflows/docker-build.yml)
 ```
 
-效果：![Docker Image](https://github.com/tbphp/gpt-load/actions/workflows/docker-build.yml/badge.svg)
+效果：![Docker Image](https://github.com/bluesky4485/gpt-load/actions/workflows/docker-build.yml/badge.svg)
 
 ## 🐛 常见问题排查
 

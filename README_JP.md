@@ -2,16 +2,14 @@
 
 [English](README.md) | [中文](README_CN.md) | 日本語
 
-[![Release](https://img.shields.io/github/v/release/tbphp/gpt-load)](https://github.com/tbphp/gpt-load/releases)
+[![Release](https://img.shields.io/github/v/release/bluesky4485/gpt-load)](https://github.com/bluesky4485/gpt-load/releases)
 ![Go Version](https://img.shields.io/badge/Go-1.24+-blue.svg)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
 複数のAIサービスを統合する必要がある企業や開発者向けに特別に設計された、高性能でエンタープライズグレードのAI APIトランスペアレントプロキシサービス。Goで構築され、インテリジェントなキー管理、ロードバランシング、包括的な監視機能を備え、高並行性の本番環境向けに設計されています。
 
-詳細なドキュメントについては、[公式ドキュメント](https://www.gpt-load.com/docs?lang=ja)をご覧ください。
+詳細な使い方は本 README をご覧ください。質問や問題報告は [GitHub Issues](https://github.com/bluesky4485/gpt-load/issues) をご利用ください。
 
-<a href="https://trendshift.io/repositories/14880" target="_blank"><img src="https://trendshift.io/api/badge/repositories/14880" alt="tbphp%2Fgpt-load | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
-<a href="https://hellogithub.com/repository/tbphp/gpt-load" target="_blank"><img src="https://api.hellogithub.com/v1/widgets/recommend.svg?rid=554dc4c46eb14092b9b0c56f1eb9021c&claim_uid=Qlh8vzrWJ0HCneG" alt="Featured｜HelloGitHub" style="width: 250px; height: 54px;" width="250" height="54" /></a>
 
 ## 特徴
 
@@ -56,7 +54,7 @@ docker run -d --name gpt-load \
     -p 3001:3001 \
     -e AUTH_KEY=your-secure-key-here \
     -v "$(pwd)/data":/app/data \
-    ghcr.io/tbphp/gpt-load:latest
+    kolehank/gpt-load:latest
 ```
 
 > `your-secure-key-here`を強力なパスワードに変更してください（デフォルト値は絶対に使用しないでください）。その後、管理インターフェースにログインできます：<http://localhost:3001>
@@ -70,8 +68,8 @@ docker run -d --name gpt-load \
 mkdir -p gpt-load && cd gpt-load
 
 # 設定ファイルをダウンロード
-wget https://raw.githubusercontent.com/tbphp/gpt-load/refs/heads/main/docker-compose.yml
-wget -O .env https://raw.githubusercontent.com/tbphp/gpt-load/refs/heads/main/.env.example
+wget https://raw.githubusercontent.com/bluesky4485/gpt-load/refs/heads/main/docker-compose.yml
+wget -O .env https://raw.githubusercontent.com/bluesky4485/gpt-load/refs/heads/main/.env.example
 
 # .envファイルを編集し、AUTH_KEYを強力なパスワードに変更します。デフォルトやsk-123456のような単純なキーは絶対に使用しないでください。
 
@@ -114,7 +112,7 @@ docker compose pull && docker compose down && docker compose up -d
 
 ```bash
 # クローンとビルド
-git clone https://github.com/tbphp/gpt-load.git
+git clone https://github.com/bluesky4485/gpt-load.git
 cd gpt-load
 go mod tidy
 
@@ -145,7 +143,7 @@ make run
 - すべてのノードは同一の`AUTH_KEY`、`DATABASE_DSN`、`REDIS_DSN`を設定する必要があります
 - リーダー・フォロワーアーキテクチャで、フォロワーノードは環境変数を設定する必要があります：`IS_SLAVE=true`
 
-詳細については、[クラスターデプロイメントドキュメント](https://www.gpt-load.com/docs/cluster?lang=ja)を参照してください。
+クラスタデプロイでは、すべてのノードが同じデータベースと Redis を共有する必要があります（上記の通り）。
 
 ## 設定システム
 
@@ -830,43 +828,10 @@ MCPエンドポイントは3つの認証方法をサポート:
 
 詳細については、[Tavily APIドキュメント](https://docs.tavily.com/)および[MCP仕様](https://modelcontextprotocol.io/)を参照してください。
 
-## 関連プロジェクト
+## コントリビュート
 
-- **[New API](https://github.com/QuantumNous/new-api)** - 優秀なAIモデル統合管理配信システム
-
-## 貢献
-
-GPT-Loadに貢献してくださったすべての開発者に感謝します！
-
-[![Contributors](https://contrib.rocks/image?repo=tbphp/gpt-load)](https://github.com/tbphp/gpt-load/graphs/contributors)
-
-## スポンサー
-
-<table>
-<tbody>
-<tr>
-<td width="180"><a href="https://unity2.ai/register?source=gptload"><img src="./screenshot/unity2ai.jpg" alt="Unity2.ai" width="150"></a></td>
-<td>Unity2.aiによる本プロジェクトへのスポンサー支援に感謝します！Unity2.aiは、個人開発者、チーム、企業向けの高性能AIモデルAPI中継プラットフォームです。中国国内の大手企業に長期的にサービスを提供しており、1日あたり300億token超の呼び出しを処理し、5000 RPM級の高並行性をサポートします。残高課金、初回チャージ特典、組み合わせサブスクリプション、企業向け請求書発行、専属連携サポートに対応しています。<a href="https://unity2.ai/register?source=gptload">こちらのリンク</a>から登録すると\の残高を受け取れ、公式グループ参加でさらに\の残高、最大\の無料枠を受け取れます。</td>
-</tr>
-<tr>
-<td width="180"><a href="https://linux.do"><img src="./screenshot/l.png" alt="LINUX DO" width="150"></a></td>
-<td>LINUX DOコミュニティからのサポートに心より感謝いたします！</td>
-</tr>
-<tr>
-<td width="180"><a href="https://teamorouter.com/?ref=gptload"><img src="./screenshot/teamorouter.png" alt="TeamoRouter" width="150"></a></td>
-<td>TeamoRouterによる本プロジェクトへのスポンサー支援に感謝します！TeamoRouterはAI API向けのインテリジェントトラフィックルーティングを提供し、自動フェイルオーバー、負荷分散、コスト最適化によりマルチプロバイダーAIワークロードの最適化を支援します。</td>
-</tr>
-<tr>
-<td width="180"><a href="https://www.digitalocean.com/?refcode=3d52cff21342&utm_campaign=Referral_Invite&utm_medium=Referral_Program&utm_source=badge"><img src="https://web-platforms.sfo2.cdn.digitaloceanspaces.com/WWW/Badge%202.svg" alt="DigitalOcean Referral Badge" width="150"></a></td>
-<td>このプロジェクトはDigitalOceanの支援を受けています。</td>
-</tr>
-</tbody>
-</table>
+Issue・Pull Request を歓迎します！本プロジェクトは、オリジナルの [GPT-Load](https://github.com/tbphp/gpt-load)（2.0 書き直しに移行済み）から独立してメンテナンスされているフォークで、1.x 系を独自のリリース系列として継続しています。
 
 ## ライセンス
 
-MITライセンス - 詳細は[LICENSE](LICENSE)ファイルを参照してください。
-
-## スター履歴
-
-[![Stargazers over time](https://starchart.cc/tbphp/gpt-load.svg?variant=adaptive)](https://starchart.cc/tbphp/gpt-load)
+MITライセンス - 詳細は[LICENSE](LICENSE)ファイルを参照してください。オリジナルの上位プロジェクトの作者に感謝します。

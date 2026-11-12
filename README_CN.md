@@ -2,16 +2,14 @@
 
 [English](README.md) | 中文 | [日本語](README_JP.md)
 
-[![Release](https://img.shields.io/github/v/release/tbphp/gpt-load)](https://github.com/tbphp/gpt-load/releases)
+[![Release](https://img.shields.io/github/v/release/bluesky4485/gpt-load)](https://github.com/bluesky4485/gpt-load/releases)
 ![Go Version](https://img.shields.io/badge/Go-1.24+-blue.svg)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
 一个高性能、企业级的 AI 接口透明代理服务，专门为需要集成多种 AI 服务的企业和开发者设计。采用 Go 语言开发，具备智能密钥管理、负载均衡和完善的监控功能，专为高并发生产环境而设计。
 
-详细请查看[官方文档](https://www.gpt-load.com/docs?lang=zh)
+完整说明请参阅本 README。问题反馈请使用 [GitHub Issues](https://github.com/bluesky4485/gpt-load/issues)。
 
-<a href="https://trendshift.io/repositories/14880" target="_blank"><img src="https://trendshift.io/api/badge/repositories/14880" alt="tbphp%2Fgpt-load | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
-<a href="https://hellogithub.com/repository/tbphp/gpt-load" target="_blank"><img src="https://api.hellogithub.com/v1/widgets/recommend.svg?rid=554dc4c46eb14092b9b0c56f1eb9021c&claim_uid=Qlh8vzrWJ0HCneG" alt="Featured｜HelloGitHub" style="width: 250px; height: 54px;" width="250" height="54" /></a>
 
 ## 功能特性
 
@@ -56,7 +54,7 @@ docker run -d --name gpt-load \
     -p 3001:3001 \
     -e AUTH_KEY=your-secure-key-here \
     -v "$(pwd)/data":/app/data \
-    ghcr.io/tbphp/gpt-load:latest
+    kolehank/gpt-load:latest
 ```
 
 > 请将 `your-secure-key-here` 改为强密码（决不能使用默认值），即可登录管理界面：<http://localhost:3001>
@@ -70,8 +68,8 @@ docker run -d --name gpt-load \
 mkdir -p gpt-load && cd gpt-load
 
 # 下载配置文件
-wget https://raw.githubusercontent.com/tbphp/gpt-load/refs/heads/main/docker-compose.yml
-wget -O .env https://raw.githubusercontent.com/tbphp/gpt-load/refs/heads/main/.env.example
+wget https://raw.githubusercontent.com/bluesky4485/gpt-load/refs/heads/main/docker-compose.yml
+wget -O .env https://raw.githubusercontent.com/bluesky4485/gpt-load/refs/heads/main/.env.example
 
 # 编辑 .env 文件，修改AUTH_KEY为强密码，绝不使用 sk-123456 等默认或者简单密钥
 
@@ -114,7 +112,7 @@ docker compose pull && docker compose down && docker compose up -d
 
 ```bash
 # 克隆并构建
-git clone https://github.com/tbphp/gpt-load.git
+git clone https://github.com/bluesky4485/gpt-load.git
 cd gpt-load
 go mod tidy
 
@@ -145,7 +143,7 @@ make run
 - 所有节点必须配置相同的 `AUTH_KEY`、`DATABASE_DSN`、`REDIS_DSN`
 - 一主多从架构，从节点必须配置环境变量：`IS_SLAVE=true`
 
-详细请参考[集群部署文档](https://www.gpt-load.com/docs/cluster?lang=zh)
+集群部署要求所有节点共享相同的数据库和 Redis，如上所述。
 
 ## 配置系统
 
@@ -831,43 +829,10 @@ MCP 端点支持三种认证方式：
 
 更多详情，请参阅 [Tavily API 文档](https://docs.tavily.com/) 和 [MCP 规范](https://modelcontextprotocol.io/)。
 
-## 相关项目
-
-- **[New API](https://github.com/QuantumNous/new-api)** - 优秀的AI模型聚合管理分发系统
-
 ## 贡献
 
-感谢所有为 GPT-Load 做出贡献的开发者们！
-
-[![Contributors](https://contrib.rocks/image?repo=tbphp/gpt-load)](https://github.com/tbphp/gpt-load/graphs/contributors)
-
-## 赞助商
-
-<table>
-<tbody>
-<tr>
-<td width="180"><a href="https://unity2.ai/register?source=gptload"><img src="./screenshot/unity2ai.jpg" alt="Unity2.ai" width="150"></a></td>
-<td>感谢 Unity2.ai 赞助了本项目！Unity2.ai 是面向个人开发者、团队和企业的高性能 AI 模型 API 中转平台，长期服务国内头部企业，日均承载超 300 亿 token 调用，支持 5000 RPM 级高并发。支持余额计费、首充赠额、组合订阅、企业开票和专属对接。通过<a href="https://unity2.ai/register?source=gptload">此链接</a>注册可领取 $2 余额，加入官方群再送 $10 余额，最高可领 $12 免费额度。</td>
-</tr>
-<tr>
-<td width="180"><a href="https://linux.do"><img src="./screenshot/l.png" alt="LINUX DO" width="150"></a></td>
-<td>非常感谢 LINUX DO 社区的支持！</td>
-</tr>
-<tr>
-<td width="180"><a href="https://teamorouter.com/?ref=gptload"><img src="./screenshot/teamorouter.png" alt="TeamoRouter" width="150"></a></td>
-<td>感谢 TeamoRouter 赞助了本项目！TeamoRouter 为 AI API 提供智能流量路由，帮助开发者通过自动故障转移、负载均衡和成本优化来优化多供应商 AI 工作负载。</td>
-</tr>
-<tr>
-<td width="180"><a href="https://www.digitalocean.com/?refcode=3d52cff21342&utm_campaign=Referral_Invite&utm_medium=Referral_Program&utm_source=badge"><img src="https://web-platforms.sfo2.cdn.digitaloceanspaces.com/WWW/Badge%202.svg" alt="DigitalOcean Referral Badge" width="150"></a></td>
-<td>本项目由 DigitalOcean 支持。</td>
-</tr>
-</tbody>
-</table>
+欢迎提交 Issue 和 Pull Request！本项目是原版 [GPT-Load](https://github.com/tbphp/gpt-load)（已转向 2.0 重写）的独立维护分支，延续 1.x 版本线并拥有自己的发布序列。
 
 ## 许可证
 
-MIT 许可证 - 详情请参阅 [LICENSE](LICENSE) 文件。
-
-## Star History
-
-[![Stargazers over time](https://starchart.cc/tbphp/gpt-load.svg?variant=adaptive)](https://starchart.cc/tbphp/gpt-load)
+MIT 许可证 - 详情请参阅 [LICENSE](LICENSE) 文件。感谢原上游作者的贡献。
